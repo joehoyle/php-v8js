@@ -1,0 +1,15 @@
+[package]
+name = "php-v8"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ext-php-rs = { git = "https://github.com/davidcole1340/ext-php-rs", branch = "zval_shallow_clone" }
+v8 = "0.36.0"
+serde_v8 = "0.21.0"
+serde = "1.0.117"
+
+[lib]
+crate-type = ["cdylib"]
