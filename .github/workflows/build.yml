@@ -40,7 +40,7 @@ jobs:
       - name: Install Linker
         if: matrix.cross
         run: |
-          sudo apt update
+          sudo apt update && sudo apt upgrade
           sudo apt install ${{ matrix.linker }} gcc-multilib g++-multilib
       - name: Build
         run: rustup target add ${{ matrix.target }} && cargo build --target ${{ matrix.target }} --release
