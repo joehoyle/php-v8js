@@ -20,7 +20,7 @@ jobs:
           override: true
 
       - name: Build
-        run: cargo build --target ${{ matrix.target }} --release
+        run: rustup target add ${{ matrix.target }} && cargo build --target ${{ matrix.target }} --release
 
       - name: Release
         uses: softprops/action-gh-release@v1
