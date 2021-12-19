@@ -6,18 +6,20 @@ jobs:
   build-macos:
     runs-on: macos-latest
     strategy:
-      include:
-      - build: linux
-        os: ubuntu-latest
-        rust: stable
-      - build: macos
-        os: macos-latest
-        rust: stable
-        target: aarch64-apple-darwin
-      - build: macos
-        os: macos-latest
-        rust: stable
-        target: x86_64-apple-darwin
+      matrix:
+        include:
+        - build: linux
+          os: ubuntu-latest
+          rust: stable
+          target: x86_64-unknown-linux-gnu
+        - build: macos
+          os: macos-latest
+          rust: stable
+          target: aarch64-apple-darwin
+        - build: macos
+          os: macos-latest
+          rust: stable
+          target: x86_64-apple-darwin
     steps:
       - name: Checkout
         uses: actions/checkout@v1
