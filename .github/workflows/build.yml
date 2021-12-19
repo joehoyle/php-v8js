@@ -12,12 +12,11 @@ jobs:
           os: ubuntu-latest
           rust: stable
           target: x86_64-unknown-linux-gnu
-        - build: linux-aarch64
-          os: ubuntu-latest
-          rust: stable
-          target: aarch64-unknown-linux-gnu
-          cross: true
-          linker: gcc-aarch64-linux-gnu
+        # - build: linux-aarch64
+        #   os: ubuntu-latest
+        #   rust: stable
+        #   target: aarch64-unknown-linux-gnu
+        #   cross: true
         - build: macos-aarch64
           os: macos-latest
           rust: stable
@@ -37,13 +36,12 @@ jobs:
           target: ${{ matrix.target }}
           default: true
           override: true
-      - name: Install Linker
-        if: matrix.cross
-        run: |
-          sudo apt update && sudo apt upgrade
-          sudo apt install ${{ matrix.linker }} gcc-multilib g++-multilib
       - name: Build
-        run: rustup target add ${{ matrix.target }} && cargo build --target ${{ matrix.target }} --release
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: ${{ matrix.cross }}
+          command: build
+          args: --release --target ${{ matrix.target }}
 
       - name: Release
         uses: softprops/action-gh-release@v1
