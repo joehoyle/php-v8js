@@ -12,7 +12,7 @@ jobs:
           os: ubuntu-latest
           rust: stable
           target: x86_64-unknown-linux-gnu
-          file: libphp_v8.dylib
+          file: libphp_v8.so
         # - build: linux-aarch64
         #   os: ubuntu-latest
         #   rust: stable
@@ -22,12 +22,12 @@ jobs:
           os: macos-latest
           rust: stable
           target: aarch64-apple-darwin
-          file: libphp_v8.so
+          file: libphp_v8.dylib
         - build: macos
           os: macos-latest
           rust: stable
           target: x86_64-apple-darwin
-          file: libphp_v8.so
+          file: libphp_v8.dylib
     steps:
       - name: Checkout
         uses: actions/checkout@v1
