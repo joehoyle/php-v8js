@@ -1,5 +1,6 @@
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
+use ext_php_rs::{exception::PhpException, zend::ce};
 use std::collections::HashMap;
 
 #[derive(ZvalConvert, Debug, Clone)]
@@ -62,6 +63,11 @@ pub struct V8Js {
     context: v8::Global<v8::Context>,
     global_name: String,
 }
+
+#[php_class]
+#[extends(ce::exception())]
+#[derive(Default)]
+pub struct V8JsScriptException;
 
 pub fn js_value_from_zval<'a>(
     scope: &mut v8::HandleScope<'a>,
@@ -159,14 +165,113 @@ impl V8Js {
             global_name,
         }
     }
-    pub fn execute_string(&mut self, string: String) -> PHPValue {
+    pub fn execute_string(
+        &mut self,
+        string: String,
+        identifier: Option<String>,
+        _flags: Option<String>,
+        time_limit: Option<u64>,
+        memory_limit: Option<u64>,
+    ) -> Result<PHPValue, PhpException> {
+        let isolate_handle = self.isolate.thread_safe_handle();
         let scope = &mut v8::HandleScope::new(&mut self.isolate);
         let context = v8::Local::new(scope, &self.context);
         let scope = &mut v8::ContextScope::new(scope, context);
-        let code = v8::String::new(scope, string.as_str()).unwrap();
-        let script = v8::Script::compile(scope, code, None).unwrap();
-        let result = script.run(scope).unwrap();
-        PHPValue::new(result, scope)
+        let code = v8::String::new(scope, string.as_str()).ok_or(PhpException::default(
+            "Unable to allocate code string.".to_string(),
+        ))?;
+
+        let resource_name = v8::String::new(
+            scope,
+            identifier.unwrap_or("V8Js::executeString".into()).as_str(),
+        )
+        .unwrap();
+        let source_map_url = v8::String::new(scope, "source_map_url").unwrap();
+        let script_origin = v8::ScriptOrigin::new(
+            scope,
+            resource_name.into(),
+            0,
+            0,
+            false,
+            123,
+            source_map_url.into(),
+            false,
+            false,
+            false,
+        );
+        let script = v8::Script::compile(scope, code, Some(&script_origin))
+            .ok_or(PhpException::default("Unable to compile code.".to_string()))?;
+        let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let time_limit_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let memory_limit_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        // If we have time / memory limits, we have to spawn a monitoring thread
+        // to periodically check the run time / memory usage of V8.
+        if memory_limit.is_some() || time_limit.is_some() {
+            std::thread::spawn({
+                let should_i_stop = stop_flag.clone();
+                let time_limit_hit = time_limit_hit.clone();
+                let memory_limit_hit = memory_limit_hit.clone();
+                let start = std::time::Instant::now();
+                let time_limit = std::time::Duration::from_millis(time_limit.unwrap_or(0));
+                let memory_limit = memory_limit.unwrap_or(0);
+                static MEMORY_LIMIT_HIT_CALLBACK: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
+                move || {
+                    // Callbacl function that is passed to V8. This is not able to catpure
+                    // anythign locally, so we use a static to flag whether the memory limit is
+                    // hit. The c_void pointer called in to the callback is used to pass the
+                    // memory limit reference.
+                    extern "C" fn callback(isolate: &mut v8::Isolate, data: *mut std::ffi::c_void) {
+                        let mut statistics = v8::HeapStatistics::default();
+                        isolate.get_heap_statistics(&mut statistics);
+                        let memory_limit: &mut usize = unsafe { &mut *(data as *mut usize) };
+                        if statistics.used_heap_size() > *memory_limit {
+                            MEMORY_LIMIT_HIT_CALLBACK.store(true, std::sync::atomic::Ordering::SeqCst);
+                        }
+                    }
+                    while !should_i_stop.load(std::sync::atomic::Ordering::SeqCst) {
+                        if time_limit.as_millis() > 0 {
+                            if start.elapsed() > time_limit && !isolate_handle.is_execution_terminating() {
+                                time_limit_hit.store(true, std::sync::atomic::Ordering::SeqCst);
+                                isolate_handle.terminate_execution();
+                                break;
+                            }
+                        }
+                        if memory_limit > 0 {
+                            if MEMORY_LIMIT_HIT_CALLBACK.load(std::sync::atomic::Ordering::SeqCst) {
+                                memory_limit_hit.store(true, std::sync::atomic::Ordering::SeqCst);
+                                isolate_handle.terminate_execution();
+                                break;
+                            } else {
+                                let ptr = &memory_limit as *const _ as *mut std::ffi::c_void;
+                                isolate_handle.request_interrupt(callback, ptr);
+                            }
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                }
+            });
+        }
+        let result = script.run(scope);
+        stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        let result = match result {
+            Some(result) => Ok(result),
+            None => {
+                let time_limit_hit = time_limit_hit.load(std::sync::atomic::Ordering::SeqCst);
+                let memory_limit_hit = memory_limit_hit.load(std::sync::atomic::Ordering::SeqCst);
+                if time_limit_hit {
+                    Err(PhpException::default("Time limit exceeded.".to_string()))
+                } else if memory_limit_hit {
+                    Err(PhpException::default("Memory limit exceeded.".to_string()))
+                } else {
+                    Err(PhpException::default("Unable to run code.".to_string()))
+                }
+            }
+        }?;
+
+        stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(PHPValue::new(result, scope))
     }
     pub fn __set(&mut self, property: &str, value: &Zval) {
         let scope = &mut v8::HandleScope::new(&mut self.isolate);
