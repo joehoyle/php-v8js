@@ -46,14 +46,14 @@ jobs:
           command: build
           args: --release --target ${{ matrix.target }} --lib
 
-      - name: list
-        run: ls target/release
+      - name: Rename file
+        run: mv target/${{ matrix.target }}/release/${{ matrix.file }} target/${{ matrix.target }}-${{ matrix.file }}
 
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            target/${{ matrix.target }}/release/${{ matrix.file }}
+            target/${{ matrix.target }}-${{ matrix.file }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
