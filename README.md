@@ -1,6 +1,6 @@
-# V8Js
+# PHP-V8Js
 
-V8Js is a PHP extension for the V8 JavaScript engine. It is a re-implementation of the fanstic (though unmaintained) [V8Js PHP extension](https://github.com/phpv8/v8js).
+PHP-V8Js is a PHP extension for the V8 JavaScript engine. It is a re-implementation of the fanstic (though unmaintained) [V8Js PHP extension](https://github.com/phpv8/v8js).
 
 The extension allows you to execute Javascript code in a secure sandbox from PHP. The executed code can be restricted using a time limit and/or memory limit. This provides the possibility to execute untrusted code with confidence.
 
