@@ -12,6 +12,7 @@ jobs:
           os: ubuntu-latest
           rust: stable
           target: x86_64-unknown-linux-gnu
+          file: libphp_v8.dylib
         # - build: linux-aarch64
         #   os: ubuntu-latest
         #   rust: stable
@@ -21,10 +22,12 @@ jobs:
           os: macos-latest
           rust: stable
           target: aarch64-apple-darwin
+          file: libphp_v8.so
         - build: macos
           os: macos-latest
           rust: stable
           target: x86_64-apple-darwin
+          file: libphp_v8.so
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -48,6 +51,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            target/release/PROJECT_NAME_amd64
+            target/release/${{ matrix.file }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
