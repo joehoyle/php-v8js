@@ -31,7 +31,7 @@ jobs:
             target/release/PROJECT_NAME_amd64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-build-linux:
+  build-linux:
     runs-on: ubuntu-latest
     strategy:
       matrix:
