@@ -60,9 +60,8 @@ impl PHPValue {
 
 #[php_class]
 pub struct V8Js {
-    isolate: v8::OwnedIsolate,
-    context: v8::Global<v8::Context>,
     global_name: String,
+    runtime: JSRuntime,
 }
 
 #[php_class]
@@ -126,25 +125,21 @@ pub fn js_value_from_zval<'a>(
             v8::FunctionBuilder::new(php_callback);
         let function_builder = function_builder.data(external.into());
         let function = function_builder.build(scope).unwrap();
-        // let zval = zval.shallow_clone();
         return function.into();
     }
     v8::null(scope).into()
 }
 
-#[php_impl(rename_methods = "camelCase")]
-impl V8Js {
-    pub fn __construct(
-        object_name: Option<String>,
-        _variables: Option<HashMap<String, String>>,
-        _extensions: Option<HashMap<String, String>>,
-        _report_uncaight_exceptions: Option<bool>,
-        snapshot_blob: Option<Binary<u8>>,
-    ) -> Self {
+pub struct JSRuntime {
+    pub isolate: v8::OwnedIsolate,
+    pub context: v8::Global<v8::Context>,
+}
+
+impl JSRuntime {
+    pub fn new(snapshot_blob: Option<Binary<u8>>) -> Self {
         // The V8 Platform should only ever be intitialized once.
         static START: std::sync::Once = std::sync::Once::new();
         START.call_once(|| {
-            println!("starred v8");
             let platform = v8::new_default_platform(0, false).make_shared();
             v8::V8::initialize_platform(platform);
             v8::V8::initialize();
@@ -159,35 +154,44 @@ impl V8Js {
         }
         let mut isolate = v8::Isolate::new(create_params);
         let global_context;
-        let global_name;
         {
             let scope = &mut v8::HandleScope::new(&mut isolate);
             let context = v8::Context::new(scope);
             global_context = v8::Global::new(scope, context);
         }
-        {
-            let scope = &mut v8::HandleScope::new(&mut isolate);
-            let context = v8::Local::new(scope, &global_context);
-            let scope = &mut v8::ContextScope::new(scope, context);
-            global_name = match object_name {
-                Some(name) => name,
-                None => String::from("PHP"),
-            };
-            let global = v8::String::new(scope, global_name.as_str()).unwrap();
-            let global_object = v8::Object::new(scope);
-            context
-                .global(scope)
-                .set(scope, global.into(), global_object.into());
-        }
-        V8Js {
+        JSRuntime {
             isolate,
             context: global_context,
-            global_name,
         }
     }
+
+    pub fn add_global(&mut self, name: &str) {
+        let scope = &mut v8::HandleScope::new(&mut self.isolate);
+        let context = v8::Local::new(scope, &self.context);
+        let scope = &mut v8::ContextScope::new(scope, context);
+        let global = v8::String::new(scope, name).unwrap();
+        let global_object = v8::Object::new(scope);
+        let global_scope = context.global(scope);
+        global_scope.set(scope, global.into(), global_object.into());
+    }
+
+    pub fn add_global_function(
+        &mut self,
+        name: &str,
+        callback: impl v8::MapFnTo<v8::FunctionCallback>,
+    ) {
+        let scope = &mut v8::HandleScope::new(&mut self.isolate);
+        let context = v8::Local::new(scope, &self.context);
+        let scope = &mut v8::ContextScope::new(scope, context);
+        let global = v8::String::new(scope, name).unwrap();
+        let global_scope = context.global(scope);
+        let function = v8::Function::new(scope, callback).unwrap();
+        global_scope.set(scope, global.into(), function.into());
+    }
+
     pub fn execute_string(
         &mut self,
-        string: String,
+        code: &str,
         identifier: Option<String>,
         _flags: Option<String>,
         time_limit: Option<u64>,
@@ -197,7 +201,7 @@ impl V8Js {
         let scope = &mut v8::HandleScope::new(&mut self.isolate);
         let context = v8::Local::new(scope, &self.context);
         let scope = &mut v8::ContextScope::new(scope, context);
-        let code = v8::String::new(scope, string.as_str()).ok_or(PhpException::default(
+        let code = v8::String::new(scope, code).ok_or(PhpException::default(
             "Unable to allocate code string.".to_string(),
         ))?;
 
@@ -297,9 +301,92 @@ impl V8Js {
         Ok(PHPValue::new(result, scope))
     }
 
+    pub fn snapshot() -> &[u8] {
+        let mut snapshot_creator = v8::SnapshotCreator::new(None);
+        let mut isolate = unsafe { snapshot_creator.get_owned_isolate() };
+        {
+            let scope = &mut v8::HandleScope::new(&mut isolate);
+            let c = v8::Context::new(scope);
+            let cg = v8::Local::new(scope, c);
+            let context = v8::Global::new(scope, cg);
+            let context = v8::Local::new(scope, context);
+            let scope = &mut v8::ContextScope::new(scope, context);
+            let code = match v8::String::new(scope, source.as_str()) {
+                Some(s) => s,
+                None => return None,
+            };
+
+            let script = v8::Script::compile(scope, code, None);
+            let script = match script {
+                Some(s) => s,
+                None => return None,
+            };
+
+            script.run(scope);
+            snapshot_creator.set_default_context(context);
+        }
+        // The isolate must be dropped, else PHP will segfault.
+        std::mem::forget(isolate);
+        let blob = snapshot_creator.create_blob(v8::FunctionCodeHandling::Clear);
+        let startup_data = match blob {
+            Some(data) => data,
+            None => return None,
+        };
+        let snapshot_slice: &[u8] = &*startup_data;
+        snapshot_slice
+    }
+}
+
+#[php_impl(rename_methods = "camelCase")]
+impl V8Js {
+    pub fn __construct(
+        object_name: Option<String>,
+        _variables: Option<HashMap<String, String>>,
+        _extensions: Option<HashMap<String, String>>,
+        _report_uncaight_exceptions: Option<bool>,
+        snapshot_blob: Option<Binary<u8>>,
+    ) -> Self {
+        let global_name = match object_name {
+            Some(name) => name,
+            None => String::from("PHP"),
+        };
+        let mut runtime = JSRuntime::new(snapshot_blob);
+        let print = |scope: &mut v8::HandleScope,
+                     args: v8::FunctionCallbackArguments,
+                     mut rv: v8::ReturnValue| {
+            let php_print = ext_php_rs::types::ZendCallable::try_from_name("var_dump").unwrap();
+            let arg = PHPValue::new(args.get(0), scope);
+            let mut php_arg_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = Vec::new();
+            php_arg_refs.push(&arg);
+            let result = php_print.try_call(php_arg_refs);
+        };
+        runtime.add_global(global_name.as_str());
+        runtime.add_global_function("print", print);
+        V8Js {
+            runtime,
+            global_name,
+        }
+    }
+    pub fn execute_string(
+        &mut self,
+        string: String,
+        identifier: Option<String>,
+        _flags: Option<String>,
+        time_limit: Option<u64>,
+        memory_limit: Option<u64>,
+    ) -> Result<PHPValue, PhpException> {
+        self.runtime.execute_string(
+            string.as_str(),
+            identifier,
+            _flags,
+            time_limit,
+            memory_limit
+        )
+    }
+
     pub fn __set(&mut self, property: &str, value: &Zval) {
-        let scope = &mut v8::HandleScope::new(&mut self.isolate);
-        let context = v8::Local::new(scope, &self.context);
+        let scope = &mut v8::HandleScope::new(&mut self.runtime.isolate);
+        let context = v8::Local::new(scope, &self.runtime.context);
         let scope = &mut v8::ContextScope::new(scope, context);
         let global_name = v8::String::new(scope, self.global_name.as_str()).unwrap();
         let global_object = context
@@ -338,7 +425,8 @@ impl V8Js {
             script.run(scope);
             snapshot_creator.set_default_context(context);
         }
-        std::mem::forget(isolate); // TODO(ry) this shouldn't be necessary.
+        // The isolate must be dropped, else PHP will segfault.
+        std::mem::forget(isolate);
         let blob = snapshot_creator.create_blob(v8::FunctionCodeHandling::Clear);
         let startup_data = match blob {
             Some(data) => data,
