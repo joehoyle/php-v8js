@@ -15,12 +15,12 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 ### V8Js Compatibility
 
 - [x] Memory / time limits
-- [ ] Snapshop creating and loading
+- [x] Snapshop creating and loading
 - [ ] Default global functions `var_dump`, `print`, `exit`, `require`
 - [ ] Subclassing V8Js
 - [ ] Custom exceptions for `V8JsScriptException`, `V8JsMemoryLimitException` and `V8JsTimeLimitException`
 - [ ] Support for `FLAG_PROPAGATE_PHP_EXCEPTIONS`
-
+- [ ] Throw correct exception subclasses
 
 ### New features
 

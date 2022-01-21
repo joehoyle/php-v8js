@@ -1,3 +1,4 @@
+use ext_php_rs::binary::Binary;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 use ext_php_rs::{exception::PhpException, zend::ce};
@@ -133,11 +134,30 @@ pub fn js_value_from_zval<'a>(
 
 #[php_impl(rename_methods = "camelCase")]
 impl V8Js {
-    pub fn __construct(object_name: Option<String>) -> Self {
-        let platform = v8::new_default_platform(0, false).make_shared();
-        v8::V8::initialize_platform(platform);
-        v8::V8::initialize();
-        let mut isolate = v8::Isolate::new(Default::default());
+    pub fn __construct(
+        object_name: Option<String>,
+        _variables: Option<HashMap<String, String>>,
+        _extensions: Option<HashMap<String, String>>,
+        _report_uncaight_exceptions: Option<bool>,
+        snapshot_blob: Option<Binary<u8>>,
+    ) -> Self {
+        // The V8 Platform should only ever be intitialized once.
+        static START: std::sync::Once = std::sync::Once::new();
+        START.call_once(|| {
+            println!("starred v8");
+            let platform = v8::new_default_platform(0, false).make_shared();
+            v8::V8::initialize_platform(platform);
+            v8::V8::initialize();
+        });
+
+        let mut create_params = v8::CreateParams::default();
+        // Restore the snapshot if one was provided. We have to map
+        // ext_php_rs Binary data to u8 slices.
+        if snapshot_blob.is_some() {
+            let vec_data: Vec<u8> = snapshot_blob.unwrap().into();
+            create_params = create_params.snapshot_blob(vec_data);
+        }
+        let mut isolate = v8::Isolate::new(create_params);
         let global_context;
         let global_name;
         {
@@ -227,12 +247,15 @@ impl V8Js {
                         isolate.get_heap_statistics(&mut statistics);
                         let memory_limit: &mut usize = unsafe { &mut *(data as *mut usize) };
                         if statistics.used_heap_size() > *memory_limit {
-                            MEMORY_LIMIT_HIT_CALLBACK.store(true, std::sync::atomic::Ordering::SeqCst);
+                            MEMORY_LIMIT_HIT_CALLBACK
+                                .store(true, std::sync::atomic::Ordering::SeqCst);
                         }
                     }
                     while !should_i_stop.load(std::sync::atomic::Ordering::SeqCst) {
                         if time_limit.as_millis() > 0 {
-                            if start.elapsed() > time_limit && !isolate_handle.is_execution_terminating() {
+                            if start.elapsed() > time_limit
+                                && !isolate_handle.is_execution_terminating()
+                            {
                                 time_limit_hit.store(true, std::sync::atomic::Ordering::SeqCst);
                                 isolate_handle.terminate_execution();
                                 break;
@@ -273,6 +296,7 @@ impl V8Js {
         stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(PHPValue::new(result, scope))
     }
+
     pub fn __set(&mut self, property: &str, value: &Zval) {
         let scope = &mut v8::HandleScope::new(&mut self.isolate);
         let context = v8::Local::new(scope, &self.context);
@@ -289,6 +313,48 @@ impl V8Js {
         js_value = js_value_from_zval(scope, value);
         global_object.set(scope, property_name.into(), js_value);
     }
+
+    pub fn create_snapshot(source: String) -> Option<Zval> {
+        let mut snapshot_creator = v8::SnapshotCreator::new(None);
+        let mut isolate = unsafe { snapshot_creator.get_owned_isolate() };
+        {
+            let scope = &mut v8::HandleScope::new(&mut isolate);
+            let c = v8::Context::new(scope);
+            let cg = v8::Local::new(scope, c);
+            let context = v8::Global::new(scope, cg);
+            let context = v8::Local::new(scope, context);
+            let scope = &mut v8::ContextScope::new(scope, context);
+            let code = match v8::String::new(scope, source.as_str()) {
+                Some(s) => s,
+                None => return None,
+            };
+
+            let script = v8::Script::compile(scope, code, None);
+            let script = match script {
+                Some(s) => s,
+                None => return None,
+            };
+
+            script.run(scope);
+            snapshot_creator.set_default_context(context);
+        }
+        std::mem::forget(isolate); // TODO(ry) this shouldn't be necessary.
+        let blob = snapshot_creator.create_blob(v8::FunctionCodeHandling::Clear);
+        let startup_data = match blob {
+            Some(data) => data,
+            None => return None,
+        };
+        let snapshot_slice: &[u8] = &*startup_data;
+
+        let mut zval = Zval::new();
+        zval.set_binary(snapshot_slice.into());
+        Some(zval)
+    }
+}
+#[derive(Debug)]
+struct StartupData {
+    data: *const char,
+    raw_size: std::os::raw::c_int,
 }
 
 pub fn php_callback(
