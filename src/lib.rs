@@ -185,7 +185,9 @@ impl JSRuntime {
         let scope = &mut v8::ContextScope::new(scope, context);
         let global = v8::String::new(scope, name).unwrap();
         let global_scope = context.global(scope);
-        let function = v8::Function::new(scope, callback).unwrap();
+        let mut function_builder: v8::FunctionBuilder<v8::Function> =
+            v8::FunctionBuilder::new(callback);
+        let function = function_builder.build(scope).unwrap();
         global_scope.set(scope, global.into(), function.into());
     }
 
@@ -300,41 +302,6 @@ impl JSRuntime {
         stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(PHPValue::new(result, scope))
     }
-
-    pub fn snapshot() -> &[u8] {
-        let mut snapshot_creator = v8::SnapshotCreator::new(None);
-        let mut isolate = unsafe { snapshot_creator.get_owned_isolate() };
-        {
-            let scope = &mut v8::HandleScope::new(&mut isolate);
-            let c = v8::Context::new(scope);
-            let cg = v8::Local::new(scope, c);
-            let context = v8::Global::new(scope, cg);
-            let context = v8::Local::new(scope, context);
-            let scope = &mut v8::ContextScope::new(scope, context);
-            let code = match v8::String::new(scope, source.as_str()) {
-                Some(s) => s,
-                None => return None,
-            };
-
-            let script = v8::Script::compile(scope, code, None);
-            let script = match script {
-                Some(s) => s,
-                None => return None,
-            };
-
-            script.run(scope);
-            snapshot_creator.set_default_context(context);
-        }
-        // The isolate must be dropped, else PHP will segfault.
-        std::mem::forget(isolate);
-        let blob = snapshot_creator.create_blob(v8::FunctionCodeHandling::Clear);
-        let startup_data = match blob {
-            Some(data) => data,
-            None => return None,
-        };
-        let snapshot_slice: &[u8] = &*startup_data;
-        snapshot_slice
-    }
 }
 
 #[php_impl(rename_methods = "camelCase")]
@@ -353,15 +320,36 @@ impl V8Js {
         let mut runtime = JSRuntime::new(snapshot_blob);
         let print = |scope: &mut v8::HandleScope,
                      args: v8::FunctionCallbackArguments,
-                     mut rv: v8::ReturnValue| {
+                     _rv: v8::ReturnValue| {
             let php_print = ext_php_rs::types::ZendCallable::try_from_name("var_dump").unwrap();
             let arg = PHPValue::new(args.get(0), scope);
             let mut php_arg_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = Vec::new();
             php_arg_refs.push(&arg);
             let result = php_print.try_call(php_arg_refs);
         };
+
         runtime.add_global(global_name.as_str());
         runtime.add_global_function("print", print);
+
+        let var_dump = |scope: &mut v8::HandleScope,
+                        args: v8::FunctionCallbackArguments,
+                        _rv: v8::ReturnValue| {
+            let var_dump = ext_php_rs::types::ZendCallable::try_from_name("var_dump").unwrap();
+            let arg = PHPValue::new(args.get(0), scope);
+            let mut php_arg_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = Vec::new();
+            php_arg_refs.push(&arg);
+            let result = var_dump.try_call(php_arg_refs);
+        };
+
+        runtime.add_global_function("var_dump", var_dump);
+
+        let exit = |scope: &mut v8::HandleScope,
+                    _args: v8::FunctionCallbackArguments,
+                    _rv: v8::ReturnValue| {
+            scope.terminate_execution();
+        };
+        runtime.add_global_function("exit", exit);
+
         V8Js {
             runtime,
             global_name,
@@ -380,7 +368,7 @@ impl V8Js {
             identifier,
             _flags,
             time_limit,
-            memory_limit
+            memory_limit,
         )
     }
 
