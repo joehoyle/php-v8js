@@ -209,7 +209,7 @@ impl JSRuntime {
                 }
             });
         }
-        println!("Running new script {:#?}", v8::V8::get_version());
+
         let result = script.run(scope);
         stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
         let time_limit_hit = time_limit_hit.load(std::sync::atomic::Ordering::SeqCst);

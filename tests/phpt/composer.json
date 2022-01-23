@@ -1,0 +1,17 @@
+{
+    "name": "joehoyle/v8js-tests",
+    "autoload": {
+        "psr-4": {
+            "Joehoyle\\V8jsTests\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Joe Hoyle",
+            "email": "joehoyle@gmail.com"
+        }
+    ],
+    "require": {
+        "phpunit/phpunit": "^9.5"
+    }
+}

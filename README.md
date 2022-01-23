@@ -16,7 +16,8 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 
 - [x] Memory / time limits
 - [x] Snapshop creating and loading
-- [ ] Default global functions `var_dump`, `print`, `exit`
+- [x] Default global functions `var_dump`, `sleep`, `exit`
+- [ ] Default global function `print`
 - [ ] CommonJS / `require` support
 - [ ] `setModuleLoader`
 - [ ] `setModuleNormalizer`
@@ -28,3 +29,8 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 ### New features
 
 - [ ] Support for native ES modules
+
+## Credits
+
+- [Stefan Siegl](https://github.com/stesie) of course for creating v8js, and the [37 contributors](https://github.com/phpv8/v8js/graphs/contributors).
+- [David Cole](https://github.com/davidcole1340) for creating ext-php-rs and helping me use the library.
