@@ -128,6 +128,7 @@ pub fn js_value_from_zval<'a>(
 pub struct V8Js {
     global_name: String,
     runtime: JSRuntime,
+    user_properties: HashMap<String, Zval>,
 }
 
 #[php_impl(rename_methods = "camelCase")]
@@ -162,6 +163,7 @@ impl V8Js {
         V8Js {
             runtime,
             global_name,
+            user_properties: HashMap::new(),
         }
     }
     pub fn set_module_loader(&mut self, _callable: &Zval) {
@@ -233,6 +235,14 @@ impl V8Js {
         if  value.is_callable() {
             let value = value.shallow_clone();
             self.runtime.add_callback(property, value);
+        }
+        self.user_properties.insert(property.into(), value.shallow_clone());
+    }
+
+    pub fn __get(&mut self, property: &str) -> Option<Zval> {
+        match self.user_properties.get(property.into()) {
+            Some(zval) => Some(zval.shallow_clone()),
+            None => None,
         }
     }
 
