@@ -18,6 +18,8 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 - [x] Snapshop creating and loading
 - [ ] Default global functions `var_dump`, `print`, `exit`
 - [ ] CommonJS / `require` support
+- [ ] `setModuleLoader`
+- [ ] `setModuleNormalizer`
 - [ ] Subclassing V8Js
 - [ ] Custom exceptions for `V8JsScriptException`, `V8JsMemoryLimitException` and `V8JsTimeLimitException`
 - [ ] Support for `FLAG_PROPAGATE_PHP_EXCEPTIONS`
