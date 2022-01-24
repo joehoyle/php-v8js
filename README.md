@@ -26,6 +26,10 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 - [ ] Support for `FLAG_PROPAGATE_PHP_EXCEPTIONS`
 - [ ] Throw correct exception subclasses
 
+### Not planned compatibility
+
+- [ ] Support for `ArrayAccess` objects mapped into JavaScript
+
 ### New features
 
 - [ ] Support for native ES modules

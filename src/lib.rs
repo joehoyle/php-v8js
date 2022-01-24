@@ -1,6 +1,9 @@
 use ext_php_rs::binary::Binary;
-use ext_php_rs::prelude::*;
-use ext_php_rs::types::Zval;
+use ext_php_rs::convert::{IntoZval, FromZval};
+use ext_php_rs::flags::DataType;
+use ext_php_rs::{prelude::*};
+use ext_php_rs::types::{ZendHashTable, ZendObject, Zval};
+use ext_php_rs::zend::ClassEntry;
 use ext_php_rs::{exception::PhpException, zend::ce};
 
 use std::collections::HashMap;
@@ -9,64 +12,59 @@ mod runtime;
 
 pub use crate::runtime::JSRuntime;
 
-#[derive(ZvalConvert, Debug, Clone, PartialEq)]
-pub enum PHPValue {
-    String(String),
-    None,
-    Boolean(bool),
-    Float(f64),
-    Integer(i64),
-    Array(Vec<PHPValue>),
-    Object(HashMap<String, PHPValue>),
-}
-
-impl PHPValue {
-    pub fn from(result: v8::Local<v8::Value>, scope: &mut v8::HandleScope) -> Self {
-        if result.is_string() {
-            return PHPValue::String(result.to_rust_string_lossy(scope));
-        }
-        if result.is_null_or_undefined() {
-            return PHPValue::None;
-        }
-        if result.is_boolean() {
-            return PHPValue::Boolean(result.boolean_value(scope));
-        }
-        if result.is_int32() {
-            return PHPValue::Integer(result.integer_value(scope).unwrap());
-        }
-        if result.is_number() {
-            return PHPValue::Float(result.number_value(scope).unwrap());
-        }
-        if result.is_array() {
-            let array = v8::Local::<v8::Array>::try_from(result).unwrap();
-            let mut vec: Vec<PHPValue> = Vec::new();
-            for index in 0..array.length() {
-                vec.push(PHPValue::from(
-                    array.get_index(scope, index).unwrap(),
-                    scope,
-                ));
-            }
-            return PHPValue::Array(vec);
-        }
-        if result.is_function() {
-            return PHPValue::String(String::from("Function"));
-        }
-        if result.is_object() {
-            let object = v8::Local::<v8::Object>::try_from(result).unwrap();
-            let properties = object.get_own_property_names(scope).unwrap();
-            let mut hashmap: HashMap<String, PHPValue> = HashMap::new();
-            for index in 0..properties.length() {
-                let key = properties.get_index(scope, index).unwrap();
-                let value = object.get(scope, key).unwrap();
-                hashmap.insert(
-                    key.to_rust_string_lossy(scope),
-                    PHPValue::from(value, scope),
-                );
-            }
-            return PHPValue::Object(hashmap);
-        }
-        PHPValue::String(result.to_rust_string_lossy(scope))
+pub fn zval_from_jsvalue(result: v8::Local<v8::Value>, scope: &mut v8::HandleScope) -> Zval {
+    if result.is_string() {
+        return result.to_rust_string_lossy(scope).try_into().unwrap();
     }
+    if result.is_null_or_undefined() {
+        let mut zval = Zval::new();
+        zval.set_null();
+        return zval;
+    }
+    if result.is_boolean() {
+        return result.boolean_value(scope).into();
+    }
+    if result.is_int32() {
+        return result.integer_value(scope).unwrap().try_into().unwrap();
+    }
+    if result.is_number() {
+        return result.number_value(scope).unwrap().into();
+    }
+    if result.is_array() {
+        let array = v8::Local::<v8::Array>::try_from(result).unwrap();
+        let mut zend_array = ZendHashTable::new();
+        for index in 0..array.length() {
+            let _result = zend_array.push(zval_from_jsvalue(
+                array.get_index(scope, index).unwrap(),
+                scope,
+            ));
+        }
+        let mut zval = Zval::new();
+        zval.set_hashtable(zend_array);
+        return zval;
+    }
+    if result.is_function() {
+        return "Function".try_into().unwrap();
+    }
+    if result.is_object() {
+        let object = v8::Local::<v8::Object>::try_from(result).unwrap();
+        let properties = object.get_own_property_names(scope).unwrap();
+        let class_entry = ClassEntry::try_find("V8Object").unwrap();
+        let mut zend_object = ZendObject::new(class_entry);
+        for index in 0..properties.length() {
+            let key = properties.get_index(scope, index).unwrap();
+            let value = object.get(scope, key).unwrap();
+
+            zend_object
+                .set_property(
+                    key.to_rust_string_lossy(scope).as_str(),
+                    zval_from_jsvalue(value, scope),
+                )
+                .unwrap();
+        }
+        return zend_object.into_zval(false).unwrap();
+    }
+    result.to_rust_string_lossy(scope).try_into().unwrap()
 }
 
 #[php_class]
@@ -121,6 +119,7 @@ pub fn js_value_from_zval<'a>(
             return v8::Array::new_with_elements(scope, &values[..]).into();
         }
     }
+    // Todo: is_object
     v8::null(scope).into()
 }
 
@@ -185,7 +184,7 @@ impl V8Js {
         _flags: Option<String>,
         time_limit: Option<u64>,
         memory_limit: Option<u64>,
-    ) -> Result<PHPValue, PhpException> {
+    ) -> Result<Zval, PhpException> {
         let result = self.runtime.execute_string(
             string.as_str(),
             identifier,
@@ -195,16 +194,18 @@ impl V8Js {
         );
 
         match result {
-            Ok(result) => {
-                match result {
-                    Some(result) => {
-                        let mut scope = &mut self.runtime.handle_scope();
-                        let local = v8::Local::new(scope, result);
-                        Ok(PHPValue::from(local, &mut scope))
-                    },
-                    None => Ok(PHPValue::None),
+            Ok(result) => match result {
+                Some(result) => {
+                    let mut scope = &mut self.runtime.handle_scope();
+                    let local = v8::Local::new(scope, result);
+                    Ok(zval_from_jsvalue(local, &mut scope))
                 }
-            }
+                None => {
+                    let mut zval = Zval::new();
+                    zval.set_null();
+                    Ok(zval)
+                },
+            },
             _ => Err(PhpException::default(String::from("Exception"))),
         }
     }
@@ -222,21 +223,24 @@ impl V8Js {
             let property_name = v8::String::new(&mut scope, property).unwrap();
 
             let js_value;
-            if  value.is_callable() {
-                let function_builder: v8::FunctionBuilder<v8::Function> = v8::FunctionBuilder::new(php_callback);
+            if value.is_callable() {
+                let function_builder: v8::FunctionBuilder<v8::Function> =
+                    v8::FunctionBuilder::new(php_callback);
                 let function_builder = function_builder.data(property_name.into());
-                let function: v8::Local<v8::Value> = function_builder.build(&mut scope).unwrap().into();
+                let function: v8::Local<v8::Value> =
+                    function_builder.build(&mut scope).unwrap().into();
                 js_value = function;
             } else {
                 js_value = js_value_from_zval(&mut scope, value);
             }
             global.set(&mut scope, property_name.into(), js_value);
         }
-        if  value.is_callable() {
+        if value.is_callable() {
             let value = value.shallow_clone();
             self.runtime.add_callback(property, value);
         }
-        self.user_properties.insert(property.into(), value.shallow_clone());
+        self.user_properties
+            .insert(property.into(), value.shallow_clone());
     }
 
     pub fn __get(&mut self, property: &str) -> Option<Zval> {
@@ -253,10 +257,35 @@ impl V8Js {
         Some(zval)
     }
 }
+
+// Zval doesn't implement Clone, which means that Zval's can not
+// be passed to `ZendCallable.try_call()`, so we have to wrap it
+// in a Cloneable wrapper.
 #[derive(Debug)]
-struct StartupData {
-    data: *const char,
-    raw_size: std::os::raw::c_int,
+struct CloneableZval(Zval);
+
+impl FromZval<'_> for CloneableZval {
+    const TYPE: DataType = DataType::Mixed;
+    fn from_zval(zval: &'_ Zval) -> Option<Self> {
+        Some(Self(zval.shallow_clone()))
+    }
+}
+
+impl IntoZval for CloneableZval {
+    const TYPE: DataType = DataType::Mixed;
+    fn set_zval(self, zv: &mut Zval, _: bool) -> ext_php_rs::error::Result<()> {
+        *zv = self.0;
+        Ok(())
+    }
+    fn into_zval(self, _persistent: bool) -> ext_php_rs::error::Result<Zval> {
+        Ok(self.0)
+    }
+}
+
+impl Clone for CloneableZval {
+    fn clone(&self) -> Self {
+        Self(self.0.shallow_clone())
+    }
 }
 
 pub fn php_callback(
@@ -280,17 +309,17 @@ pub fn php_callback(
         return;
     }
 
-    let mut php_args: Vec<PHPValue> = Vec::new();
-    let mut php_arg_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = Vec::new();
-
+    let mut php_args: Vec<CloneableZval> = Vec::new();
+    let mut php_args_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = Vec::new();
     for index in 0..args.length() {
-        let v = PHPValue::from(args.get(index), scope);
-        php_args.push(v);
+        let v = zval_from_jsvalue(args.get(index), scope);
+        let clonable_zval = CloneableZval::from_zval(&v).unwrap();
+        php_args.push(clonable_zval);
     }
-    for index in &php_args {
-        php_arg_refs.push(index);
+    for index in 0..php_args.len() {
+        php_args_refs.push(php_args.get(index).unwrap());
     }
-    let return_value = callback.try_call(php_arg_refs).unwrap();
+    let return_value = callback.try_call(php_args_refs).unwrap();
     let return_value_js = js_value_from_zval(scope, &return_value);
     rv.set(return_value_js)
 }
@@ -301,10 +330,8 @@ pub fn php_callback_sleep(
     mut rv: v8::ReturnValue,
 ) {
     let sleep = ext_php_rs::types::ZendCallable::try_from_name("sleep").unwrap();
-    let arg = PHPValue::from(args.get(0), scope);
-    let mut php_arg_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = Vec::new();
-    php_arg_refs.push(&arg);
-    let result = sleep.try_call(php_arg_refs);
+    let arg = CloneableZval::from_zval(&zval_from_jsvalue(args.get(0), scope));
+    let result = sleep.try_call(vec![&arg]);
     let result = match result {
         Ok(result) => result,
         Err(_) => Zval::new(), // todo: JS error objects?
@@ -319,10 +346,8 @@ pub fn php_callback_var_dump(
     mut rv: v8::ReturnValue,
 ) {
     let var_dump = ext_php_rs::types::ZendCallable::try_from_name("var_dump").unwrap();
-    let arg = PHPValue::from(args.get(0), scope);
-    let mut php_arg_refs: Vec<&dyn ext_php_rs::convert::IntoZvalDyn> = Vec::new();
-    php_arg_refs.push(&arg);
-    let result = var_dump.try_call(php_arg_refs);
+    let arg = CloneableZval::from_zval(&zval_from_jsvalue(args.get(0), scope));
+    let result = var_dump.try_call(vec![&arg]);
     let result = match result {
         Ok(result) => result,
         Err(_) => Zval::new(), // todo: JS error objects?
@@ -351,6 +376,9 @@ pub fn php_callback_exit(
     script.run(scope);
 }
 
+#[php_class]
+pub struct V8Object {}
+
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
     module
@@ -378,7 +406,7 @@ mod integration {
         setup();
         let output = Command::new("php")
             .arg(format!(
-                "-dextension=target/debug/libphp_v8.{}",
+                "-dextension=target/debug/libv8js.{}",
                 std::env::consts::DLL_EXTENSION
             ))
             .arg("-n")
@@ -413,5 +441,15 @@ mod integration {
     #[test]
     fn php_bridge() {
         run_php("php_bridge.php");
+    }
+
+    #[test]
+    fn global_functions() {
+        run_php("global_functions.php");
+    }
+
+    #[test]
+    fn js_bridge() {
+        run_php("js_bridge.php");
     }
 }

@@ -293,15 +293,12 @@ mod tests {
                 handle.terminate_execution();
                 // allow shutdown
                 std::thread::sleep(std::time::Duration::from_millis(200));
-                // unless reported otherwise the test should fail after this point
-                // tx.send(false).ok();
             });
 
             let source = v8::String::new(scope, "for(;;) {}").unwrap();
             let r = v8::Script::compile(scope, source, None);
             let script = r.unwrap();
-            let result = script.run(scope);
-            println!("{:#?}", result);
+            let _result = script.run(scope);
         }
         {
             let isolate = &mut v8::Isolate::new(Default::default());
@@ -312,20 +309,19 @@ mod tests {
             let source = v8::String::new(scope, "'hello'").unwrap();
             let r = v8::Script::compile(scope, source, None);
             let script = r.unwrap();
-            let result = script.run(scope);
-            println!("{:#?}", result);
+            let _result = script.run(scope);
         }
     }
-    // #[test]
-    // fn execute_string() {
-    //     let mut runtime = JSRuntime::new(None);
-    //     let result = runtime
-    //         .execute_string("true", None, None, None, None)
-    //         .unwrap();
-    //     let scope = &mut runtime.handle_scope();
-    //     let local = v8::Local::new(scope, result);
-    //     assert_eq!(local.is_true(), true);
-    // }
+    #[test]
+    fn execute_string() {
+        let mut runtime = JSRuntime::new(None);
+        let result = runtime
+            .execute_string("true", None, None, None, None)
+            .unwrap().unwrap();
+        let scope = &mut runtime.handle_scope();
+        let local = v8::Local::new(scope, result);
+        assert_eq!(local.is_true(), true);
+    }
     // #[test]
     // fn add_global() {
     //     let string;

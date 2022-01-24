@@ -2,11 +2,11 @@
 
 $v8js = new V8Js;
 $result = $v8js->executeString( 'PHP' );
-assert( $result === [] );
+assert( $result instanceof V8Object );
 
 $v8js = new V8Js('MyBridge');
 $result = $v8js->executeString( 'MyBridge' );
-assert( $result === [] );
+assert( $result instanceof V8Object );
 
 $v8js = new V8Js;
 $v8js->my_var = 'abc';
@@ -27,3 +27,4 @@ $v8js->sleep = function ( int $milliseconds ) {
 };
 $result = $v8js->executeString( 'PHP.sleep(200);' );
 assert( $result === "done" );
+
