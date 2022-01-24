@@ -25,10 +25,12 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 - [ ] Custom exceptions for `V8JsScriptException`, `V8JsMemoryLimitException` and `V8JsTimeLimitException`
 - [ ] Support for `FLAG_PROPAGATE_PHP_EXCEPTIONS`
 - [ ] Throw correct exception subclasses
+- [ ] PHP INI settings `v8js.flags`
 
 ### Not planned compatibility
 
-- [ ] Support for `ArrayAccess` objects mapped into JavaScript
+- Support for `ArrayAccess` objects mapped into JavaScript
+- PHP INI settings `v8js.use_array_access`, `v8js.use_date`, `v8js.icudtl_dat_path`
 
 ### New features
 

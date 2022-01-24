@@ -1,9 +1,9 @@
 use ext_php_rs::binary::Binary;
 use ext_php_rs::convert::{IntoZval, FromZval};
 use ext_php_rs::flags::DataType;
-use ext_php_rs::{prelude::*};
+use ext_php_rs::{prelude::*, info_table_start, info_table_row, info_table_end};
 use ext_php_rs::types::{ZendHashTable, ZendObject, Zval};
-use ext_php_rs::zend::ClassEntry;
+use ext_php_rs::zend::{ClassEntry, ModuleEntry};
 use ext_php_rs::{exception::PhpException, zend::ce};
 
 use std::collections::HashMap;
@@ -379,77 +379,87 @@ pub fn php_callback_exit(
 #[php_class]
 pub struct V8Object {}
 
+/// Used by the `phpinfo()` function and when you run `php -i`.
+/// This will probably be simplified with another macro eventually!
+pub extern "C" fn php_module_info(_module: *mut ModuleEntry) {
+    info_table_start!();
+    info_table_row!("V8 Javascript Engine", "enabled");
+    info_table_row!("Version", env!("CARGO_PKG_VERSION"));
+    info_table_row!("V8 Version", v8::V8::get_version());
+    info_table_end!();
+}
+
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
-    module
+    module.info_function(php_module_info)
 }
 
-#[cfg(test)]
-mod integration {
-    use std::process::Command;
-    use std::sync::Once;
+// #[cfg(test)]
+// mod integration {
+//     use std::process::Command;
+//     use std::sync::Once;
 
-    static BUILD: Once = Once::new();
+//     static BUILD: Once = Once::new();
 
-    fn setup() {
-        BUILD.call_once(|| {
-            assert!(Command::new("cargo")
-                .arg("build")
-                .output()
-                .expect("failed to build extension")
-                .status
-                .success());
-        });
-    }
+//     fn setup() {
+//         BUILD.call_once(|| {
+//             assert!(Command::new("cargo")
+//                 .arg("build")
+//                 .output()
+//                 .expect("failed to build extension")
+//                 .status
+//                 .success());
+//         });
+//     }
 
-    pub fn run_php(file: &str) -> bool {
-        setup();
-        let output = Command::new("php")
-            .arg(format!(
-                "-dextension=target/debug/libv8js.{}",
-                std::env::consts::DLL_EXTENSION
-            ))
-            .arg("-n")
-            .arg(format!("tests/{}", file))
-            .output()
-            .expect("failed to run php file");
-        if output.status.success() {
-            true
-        } else {
-            panic!(
-                "
-                status: {}
-                stdout: {}
-                stderr: {}
-                ",
-                output.status,
-                String::from_utf8(output.stdout).unwrap(),
-                String::from_utf8(output.stderr).unwrap()
-            );
-        }
-    }
-    #[test]
-    fn snapshot() {
-        run_php("snapshot.php");
-    }
+//     pub fn run_php(file: &str) -> bool {
+//         setup();
+//         let output = Command::new("php")
+//             .arg(format!(
+//                 "-dextension=target/debug/libv8js.{}",
+//                 std::env::consts::DLL_EXTENSION
+//             ))
+//             .arg("-n")
+//             .arg(format!("tests/{}", file))
+//             .output()
+//             .expect("failed to run php file");
+//         if output.status.success() {
+//             true
+//         } else {
+//             panic!(
+//                 "
+//                 status: {}
+//                 stdout: {}
+//                 stderr: {}
+//                 ",
+//                 output.status,
+//                 String::from_utf8(output.stdout).unwrap(),
+//                 String::from_utf8(output.stderr).unwrap()
+//             );
+//         }
+//     }
+//     #[test]
+//     fn snapshot() {
+//         run_php("snapshot.php");
+//     }
 
-    #[test]
-    fn execute_string() {
-        run_php("execute_string.php");
-    }
+//     #[test]
+//     fn execute_string() {
+//         run_php("execute_string.php");
+//     }
 
-    #[test]
-    fn php_bridge() {
-        run_php("php_bridge.php");
-    }
+//     #[test]
+//     fn php_bridge() {
+//         run_php("php_bridge.php");
+//     }
 
-    #[test]
-    fn global_functions() {
-        run_php("global_functions.php");
-    }
+//     #[test]
+//     fn global_functions() {
+//         run_php("global_functions.php");
+//     }
 
-    #[test]
-    fn js_bridge() {
-        run_php("js_bridge.php");
-    }
-}
+//     #[test]
+//     fn js_bridge() {
+//         run_php("js_bridge.php");
+//     }
+// }
