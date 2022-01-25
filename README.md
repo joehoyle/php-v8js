@@ -10,6 +10,17 @@ The extension allows you to execute JavaScript code in a secure sandbox from PHP
 
 The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/latest/v8/). This makes installing the extension very simple.
 
+## Mapping Rules
+
+|PHP -> JavaScript|JavaScript -> PHP|
+|---|---|
+|String -> string|string -> String|
+|Bool -> bool|bool -> Bool|
+|Array (numeric) -> Array|array -> Array|
+|Array (string keys) -> Object|Object -> V8Object|
+|Int -> Number|Number -> Float|
+
+
 ## Todo:
 
 ### V8Js Compatibility
@@ -18,12 +29,12 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 - [x] Snapshop creating and loading
 - [x] Default global functions `var_dump`, `sleep`, `exit`
 - [ ] Default global function `print`
-- [ ] CommonJS / `require` support
-- [ ] `setModuleLoader`
-- [ ] `setModuleNormalizer`
+- [x] CommonJS / `require` support
+- [x] `setModuleLoader`
+- [ ] `setModuleNormaliser`
 - [ ] Subclassing V8Js
 - [ ] Custom exceptions for `V8JsScriptException`, `V8JsMemoryLimitException` and `V8JsTimeLimitException`
-- [ ] Support for `FLAG_PROPAGATE_PHP_EXCEPTIONS`
+- [ ] Support for `FLAG_PROPAGATE_PHP_EXCEPTIONS`, `V8Js::FLAG_FORCE_ARRAY`
 - [ ] Throw correct exception subclasses
 - [ ] PHP INI settings `v8js.flags`
 - [ ] `V8Js::V8_VERSION` constant
@@ -32,6 +43,7 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 
 - Support for `ArrayAccess` objects mapped into JavaScript
 - PHP INI settings `v8js.use_array_access`, `v8js.use_date`, `v8js.icudtl_dat_path`
+- `V8Js::registerExtension`
 
 ### New features
 
