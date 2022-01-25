@@ -159,22 +159,18 @@ impl V8Js {
         runtime.add_global_function("print", php_callback_var_dump);
         runtime.add_global_function("exit", php_callback_exit);
         runtime.add_global_function("sleep", php_callback_sleep);
+        runtime.add_global_function("require", php_callback_require);
         V8Js {
             runtime,
             global_name,
             user_properties: HashMap::new(),
         }
     }
-    pub fn set_module_loader(&mut self, _callable: &Zval) {
-        // let mut loader = self
-        //     .runtime
-        //     .isolate
-        //     .get_slot::<Rc<RefCell<ModuleLoader>>>()
-        //     .unwrap()
-        //     .borrow_mut();
-        // let callable = callable.shallow_clone();
-        // loader.callback = Some(callable);
-        // self.commonjs_module_loader = Some(callable)
+
+    pub fn set_module_loader(&mut self, callable: &Zval) {
+        let state = self.runtime.get_state();
+        let mut state = state.borrow_mut();
+        state.commonjs_module_loader = Some(callable.shallow_clone());
     }
 
     pub fn execute_string(
@@ -376,6 +372,55 @@ pub fn php_callback_exit(
     script.run(scope);
 }
 
+pub fn php_callback_require(
+    scope: &mut v8::HandleScope,
+    args: v8::FunctionCallbackArguments,
+    mut rv: v8::ReturnValue,
+) {
+    let module_name = args.get(0).to_rust_string_lossy(scope);
+    let isolate: &mut v8::Isolate = scope.as_mut();
+    let state = JSRuntime::state(isolate);
+    let mut state = state.borrow_mut();
+
+    let module = match state.commonjs_modules.get(&module_name) {
+        Some(module) => module.clone(),
+        None => {
+            let commonjs_module_loader = &state.commonjs_module_loader;
+            if commonjs_module_loader.is_none() {
+                return ();
+            }
+
+            let module_code = commonjs_module_loader.as_ref().unwrap().try_call(vec![&module_name]);
+
+            if module_code.is_err() {
+                return (); // todo
+            }
+            let module_code = module_code.unwrap().string().unwrap();
+            let module_code = format!("{}{}{}", "(function (exports, module) {", module_code, "\n});");
+            let module_code = v8::String::new(scope, module_code.as_str()).unwrap();
+            let script = v8::Script::compile(scope, module_code, None).unwrap();
+            let result: v8::Local<v8::Function> = script.run(scope).unwrap().try_into().unwrap(); // todo
+            let module = v8::Object::new(scope);
+            let exports = v8::Object::new(scope);
+            let name: v8::Local<v8::Value> = v8::String::new(scope, "exports").unwrap().into();
+            module.set(scope, name, exports.into());
+            result.call(scope, module.into(), &[exports.into(), module.into()]);
+
+            let exports = module.get(scope, name);
+            if exports.is_none() {
+                return (); // todo
+            }
+            let exports = exports.unwrap();
+            let module: v8::Global<v8::Value> = v8::Global::new(scope, exports);
+            state.commonjs_modules.insert(module_name.to_string(), module.clone());
+            module
+        }
+    };
+
+    let local = v8::Local::new(scope, module);
+    rv.set(local);
+}
+
 #[php_class]
 pub struct V8Object {}
 
@@ -462,5 +507,10 @@ mod integration {
     #[test]
     fn js_bridge() {
         run_php("js_bridge.php");
+    }
+
+    #[test]
+    fn commonjs_modules() {
+        run_php("commonjs_modules.php");
     }
 }
