@@ -170,7 +170,7 @@ dependencies = [
 [[package]]
 name = "ext-php-rs"
 version = "0.7.3"
-source = "git+https://github.com/davidcole1340/ext-php-rs?branch=zval_shallow_clone#f9528f07a8e90822587a7e6328bb9c9bcee17ca5"
+source = "git+https://github.com/davidcole1340/ext-php-rs?branch=master#4468656563fecce474cd4f3593a1614868bd8733"
 dependencies = [
  "bindgen",
  "bitflags",
@@ -185,7 +185,7 @@ dependencies = [
 [[package]]
 name = "ext-php-rs-derive"
 version = "0.7.3"
-source = "git+https://github.com/davidcole1340/ext-php-rs?branch=zval_shallow_clone#f9528f07a8e90822587a7e6328bb9c9bcee17ca5"
+source = "git+https://github.com/davidcole1340/ext-php-rs?branch=master#4468656563fecce474cd4f3593a1614868bd8733"
 dependencies = [
  "anyhow",
  "darling",

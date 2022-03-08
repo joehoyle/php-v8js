@@ -1,4 +1,5 @@
 use ext_php_rs::binary::Binary;
+use ext_php_rs::builders::ClassBuilder;
 use ext_php_rs::convert::{FromZval, IntoZval};
 use ext_php_rs::flags::DataType;
 use ext_php_rs::types::{ZendHashTable, ZendObject, Zval};
@@ -123,11 +124,15 @@ pub fn js_value_from_zval<'a>(
     v8::null(scope).into()
 }
 
-#[php_class]
+#[php_class(modifier = "v8js_modifier")]
 pub struct V8Js {
     global_name: String,
     runtime: JSRuntime,
     user_properties: HashMap<String, Zval>,
+}
+
+fn v8js_modifier(class: ClassBuilder) -> ext_php_rs::error::Result<ClassBuilder> {
+    class.constant("V8_VERSION", v8::V8::get_version())
 }
 
 #[php_impl(rename_methods = "camelCase")]
@@ -390,13 +395,19 @@ pub fn php_callback_require(
                 return ();
             }
 
-            let module_code = commonjs_module_loader.as_ref().unwrap().try_call(vec![&module_name]);
+            let module_code = commonjs_module_loader
+                .as_ref()
+                .unwrap()
+                .try_call(vec![&module_name]);
 
             if module_code.is_err() {
                 return (); // todo
             }
             let module_code = module_code.unwrap().string().unwrap();
-            let module_code = format!("{}{}{}", "(function (exports, module) {", module_code, "\n});");
+            let module_code = format!(
+                "{}{}{}",
+                "(function (exports, module) {", module_code, "\n});"
+            );
             let module_code = v8::String::new(scope, module_code.as_str()).unwrap();
             let script = v8::Script::compile(scope, module_code, None).unwrap();
             let result: v8::Local<v8::Function> = script.run(scope).unwrap().try_into().unwrap(); // todo
@@ -412,7 +423,9 @@ pub fn php_callback_require(
             }
             let exports = exports.unwrap();
             let module: v8::Global<v8::Value> = v8::Global::new(scope, exports);
-            state.commonjs_modules.insert(module_name.to_string(), module.clone());
+            state
+                .commonjs_modules
+                .insert(module_name.to_string(), module.clone());
             module
         }
     };
@@ -438,7 +451,6 @@ pub extern "C" fn php_module_info(_module: *mut ModuleEntry) {
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
     module.info_function(php_module_info)
 }
-
 
 #[cfg(test)]
 mod integration {
