@@ -12,6 +12,10 @@ use std::collections::HashMap;
 mod runtime;
 
 pub use crate::runtime::JSRuntime;
+pub use crate::runtime::Error as RuntimeError;
+
+static mut V8JSTIMELIMITEXCEPTION_EXCEPTION: Option<&'static ClassEntry> = None;
+static mut V8JSMEMORYLIMITEXCEPTION_EXCEPTION: Option<&'static ClassEntry> = None;
 
 pub fn zval_from_jsvalue(result: v8::Local<v8::Value>, scope: &mut v8::HandleScope) -> Zval {
     if result.is_string() {
@@ -207,7 +211,17 @@ impl V8Js {
                     Ok(zval)
                 }
             },
-            _ => Err(PhpException::default(String::from("Exception"))),
+            Err(e) => {
+                match e {
+                    RuntimeError::ExecutionTimeout => {
+                        Err(PhpException::new("".into(), 0, unsafe{ V8JSTIMELIMITEXCEPTION_EXCEPTION.unwrap() } ))
+                    },
+                    RuntimeError::MemoryLimitExceeded => {
+                        Err(PhpException::new("".into(), 0, unsafe{ V8JSMEMORYLIMITEXCEPTION_EXCEPTION.unwrap() } ))
+                    },
+                    _ => Err(PhpException::default(String::from("Exception")))
+                }
+            }
         }
     }
 
@@ -447,6 +461,22 @@ pub extern "C" fn php_module_info(_module: *mut ModuleEntry) {
     info_table_end!();
 }
 
+
+#[php_startup]
+pub fn startup() {
+    let ce = ClassBuilder::new("V8JsTimeLimitException")
+        .extends(ce::exception())
+        .build()
+        .expect("Failed to build V8JsTimeLimitException");
+    unsafe { V8JSTIMELIMITEXCEPTION_EXCEPTION.replace(ce) };
+
+    let ce = ClassBuilder::new("V8JsMemoryLimitException")
+        .extends(ce::exception())
+        .build()
+        .expect("Failed to build V8JsMemoryLimitException");
+    unsafe { V8JSMEMORYLIMITEXCEPTION_EXCEPTION.replace(ce) };
+}
+
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
     module.info_function(php_module_info)
@@ -524,6 +554,16 @@ mod integration {
     #[test]
     fn commonjs_modules() {
         run_php("commonjs_modules.php");
+    }
+
+    #[test]
+    fn time_limit() {
+        run_php("time_limit.php");
+    }
+
+    #[test]
+    fn memory_limit() {
+        run_php("memory_limit.php");
     }
 
     #[test]

@@ -168,7 +168,6 @@ impl JSRuntime {
         // If we have time / memory limits, we have to spawn a monitoring thread
         // to periodically check the run time / memory usage of V8.
         if memory_limit.is_some() || time_limit.is_some() {
-            println!("checking limit");
             std::thread::spawn({
                 let should_i_stop = stop_flag.clone();
                 let time_limit_hit = time_limit_hit.clone();
@@ -179,7 +178,6 @@ impl JSRuntime {
                 static MEMORY_LIMIT_HIT_CALLBACK: std::sync::atomic::AtomicBool =
                     std::sync::atomic::AtomicBool::new(false);
                 move || {
-                    println!("{:#?}", time_limit);
                     // Callbacl function that is passed to V8. This is not able to catpure
                     // anythign locally, so we use a static to flag whether the memory limit is
                     // hit. The c_void pointer called in to the callback is used to pass the
@@ -194,9 +192,7 @@ impl JSRuntime {
                         }
                     }
                     while !should_i_stop.load(std::sync::atomic::Ordering::SeqCst) {
-                        println!("{:#?}", time_limit);
                         if time_limit.as_millis() > 0 {
-                            println!("checlig limimt");
                             if start.elapsed() > time_limit
                                 && !isolate_handle.is_execution_terminating()
                             {
