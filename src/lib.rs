@@ -525,4 +525,9 @@ mod integration {
     fn commonjs_modules() {
         run_php("commonjs_modules.php");
     }
+
+    #[test]
+    fn v8js_version() {
+        run_php("version.php");
+    }
 }

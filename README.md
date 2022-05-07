@@ -37,7 +37,7 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 - [ ] Support for `FLAG_PROPAGATE_PHP_EXCEPTIONS`, `V8Js::FLAG_FORCE_ARRAY`
 - [ ] Throw correct exception subclasses
 - [ ] PHP INI settings `v8js.flags`
-- [ ] `V8Js::V8_VERSION` constant
+- [x] `V8Js::V8_VERSION` constant
 
 ### Not planned compatibility
 
