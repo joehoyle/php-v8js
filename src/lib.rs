@@ -14,8 +14,9 @@ mod runtime;
 pub use crate::runtime::JSRuntime;
 pub use crate::runtime::Error as RuntimeError;
 
-static mut V8JSTIMELIMITEXCEPTION_EXCEPTION: Option<&'static ClassEntry> = None;
-static mut V8JSMEMORYLIMITEXCEPTION_EXCEPTION: Option<&'static ClassEntry> = None;
+static mut V8JS_TIME_LIMIT_EXCEPTION: Option<&'static ClassEntry> = None;
+static mut V8JS_MEMORY_LIMIT_EXCEPTION: Option<&'static ClassEntry> = None;
+static mut V8JS_SCRIPT_EXCEPTION: Option<&'static ClassEntry> = None;
 
 pub fn zval_from_jsvalue(result: v8::Local<v8::Value>, scope: &mut v8::HandleScope) -> Zval {
     if result.is_string() {
@@ -214,12 +215,15 @@ impl V8Js {
             Err(e) => {
                 match e {
                     RuntimeError::ExecutionTimeout => {
-                        Err(PhpException::new("".into(), 0, unsafe{ V8JSTIMELIMITEXCEPTION_EXCEPTION.unwrap() } ))
+                        Err(PhpException::new("".into(), 0, unsafe{ V8JS_TIME_LIMIT_EXCEPTION.unwrap() } ))
                     },
                     RuntimeError::MemoryLimitExceeded => {
-                        Err(PhpException::new("".into(), 0, unsafe{ V8JSMEMORYLIMITEXCEPTION_EXCEPTION.unwrap() } ))
+                        Err(PhpException::new("".into(), 0, unsafe{ V8JS_MEMORY_LIMIT_EXCEPTION.unwrap() } ))
                     },
-                    _ => Err(PhpException::default(String::from("Exception")))
+                    RuntimeError::ScriptExecutionError(error) => {
+                        Err(PhpException::new(error.message.into(), 0, unsafe{ V8JS_SCRIPT_EXCEPTION.unwrap() } ))
+                    }
+                    _ => Err(PhpException::default(String::from("Unknown error.")))
                 }
             }
         }
@@ -468,13 +472,19 @@ pub fn startup() {
         .extends(ce::exception())
         .build()
         .expect("Failed to build V8JsTimeLimitException");
-    unsafe { V8JSTIMELIMITEXCEPTION_EXCEPTION.replace(ce) };
+    unsafe { V8JS_TIME_LIMIT_EXCEPTION.replace(ce) };
 
     let ce = ClassBuilder::new("V8JsMemoryLimitException")
         .extends(ce::exception())
         .build()
         .expect("Failed to build V8JsMemoryLimitException");
-    unsafe { V8JSMEMORYLIMITEXCEPTION_EXCEPTION.replace(ce) };
+    unsafe { V8JS_MEMORY_LIMIT_EXCEPTION.replace(ce) };
+
+    let ce = ClassBuilder::new("V8JsScriptException")
+        .extends(ce::exception())
+        .build()
+        .expect("Failed to build V8JsScriptException");
+    unsafe { V8JS_SCRIPT_EXCEPTION.replace(ce) };
 }
 
 #[php_module]

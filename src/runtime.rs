@@ -15,11 +15,23 @@ pub struct JsRuntimeState {
 }
 
 #[derive(Debug)]
+pub struct ScriptExecutionErrorData {
+    pub file_name: String,
+    pub line_number: u64,
+    pub start_column: u64,
+    pub end_column: u64,
+    pub source_line: String,
+    pub trace: String,
+    pub message: String,
+}
+
+#[derive(Debug)]
 pub enum Error {
     JSRuntimeError,
     ExecutionTimeout,
     MemoryLimitExceeded,
     V8Error,
+    ScriptExecutionError(ScriptExecutionErrorData),
 }
 
 fn init_v8() {
@@ -159,8 +171,11 @@ impl JSRuntime {
             false,
             false,
         );
+
+        let try_catch = &mut v8::TryCatch::new(scope);
+
         let script =
-            v8::Script::compile(scope, code, Some(&script_origin)).ok_or(Error::JSRuntimeError)?;
+            v8::Script::compile(try_catch, code, Some(&script_origin)).ok_or(Error::JSRuntimeError)?;
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let time_limit_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let memory_limit_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -217,7 +232,7 @@ impl JSRuntime {
             });
         }
 
-        let result = script.run(scope);
+        let result = script.run(try_catch);
         stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
         let time_limit_hit = time_limit_hit.load(std::sync::atomic::Ordering::SeqCst);
         let memory_limit_hit = memory_limit_hit.load(std::sync::atomic::Ordering::SeqCst);
@@ -237,8 +252,24 @@ impl JSRuntime {
 
         stop_flag.store(true, std::sync::atomic::Ordering::SeqCst);
         let result = match result {
-            Some(result) => Ok(Some(v8::Global::new(scope, result))),
-            None => Ok(None),
+            Some(result) => Ok(Some(v8::Global::new(try_catch, result))),
+            None => {
+                let exception = try_catch.exception().unwrap();
+                let exception_string = exception
+                    .to_string(try_catch)
+                    .unwrap()
+                    .to_rust_string_lossy(try_catch);
+                let message = try_catch.message().unwrap();
+                Err(Error::ScriptExecutionError(ScriptExecutionErrorData {
+                    file_name: message.get_script_resource_name(try_catch).unwrap().to_rust_string_lossy(try_catch),
+                    line_number: u64::try_from(message.get_line_number(try_catch).unwrap()).unwrap(),
+                    start_column: u64::try_from(message.get_start_column()).unwrap(),
+                    end_column: u64::try_from(message.get_end_column()).unwrap(),
+                    trace: "".into(), // todo,
+                    message: exception_string,
+                    source_line: message.get_source_line(try_catch).unwrap().to_rust_string_lossy(try_catch),
+                }))
+            }
         };
         result
     }
