@@ -5,7 +5,7 @@ use ext_php_rs::flags::DataType;
 use ext_php_rs::types::{ZendHashTable, ZendObject, Zval};
 use ext_php_rs::zend::{ClassEntry, ModuleEntry};
 use ext_php_rs::{exception::PhpException, zend::ce};
-use ext_php_rs::{info_table_end, info_table_row, info_table_start, prelude::*};
+use ext_php_rs::{info_table_end, info_table_row, info_table_start, prelude::*, php_print};
 
 use std::collections::HashMap;
 
@@ -166,7 +166,7 @@ impl V8Js {
         }
         runtime.add_global(global_name.as_str(), object);
         runtime.add_global_function("var_dump", php_callback_var_dump);
-        runtime.add_global_function("print", php_callback_var_dump);
+        runtime.add_global_function("print", php_callback_print);
         runtime.add_global_function("exit", php_callback_exit);
         runtime.add_global_function("sleep", php_callback_sleep);
         runtime.add_global_function("require", php_callback_require);
@@ -373,6 +373,14 @@ pub fn php_callback_var_dump(
     };
     let result = js_value_from_zval(scope, &result);
     rv.set(result);
+}
+
+pub fn php_callback_print(
+    scope: &mut v8::HandleScope,
+    args: v8::FunctionCallbackArguments,
+    mut _rv: v8::ReturnValue,
+) {
+    php_print!("{}", args.get(0).to_rust_string_lossy(scope) );
 }
 
 pub fn php_callback_exit(

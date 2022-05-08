@@ -28,7 +28,7 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 - [x] Memory / time limits
 - [x] Snapshop creating and loading
 - [x] Default global functions `var_dump`, `sleep`, `exit`
-- [ ] Default global function `print`
+- [x] Default global function `print`
 - [x] CommonJS / `require` support
 - [x] `setModuleLoader`
 - [ ] `setModuleNormaliser`
@@ -36,7 +36,6 @@ The extension includes builds of libv8, via the [v8 crate](https://docs.rs/v8/la
 - [x] Custom exceptions for `V8JsScriptException`, `V8JsMemoryLimitException` and `V8JsTimeLimitException`
 - [ ] Support for `V8JsScriptException::getJsLineNumber` etc.
 - [ ] Support for `FLAG_PROPAGATE_PHP_EXCEPTIONS`, `V8Js::FLAG_FORCE_ARRAY`
-- [ ] Throw correct exception subclasses
 - [ ] PHP INI settings `v8js.flags`
 - [x] `V8Js::V8_VERSION` constant
 

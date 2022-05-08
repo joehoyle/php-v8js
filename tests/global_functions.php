@@ -2,11 +2,11 @@
 
 // Todo: print needs implementing.
 
-// $v8js = new V8Js;
-// ob_start();
-// $v8js->executeString( 'print("hello")' );
-// $result = ob_get_clean();
-// assert( $result === "hello");
+$v8js = new V8Js;
+ob_start();
+$v8js->executeString( 'print("hello")' );
+$result = ob_get_clean();
+assert( $result === "hello");
 
 $v8js = new V8Js;
 ob_start();

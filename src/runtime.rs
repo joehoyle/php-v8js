@@ -256,19 +256,24 @@ impl JSRuntime {
             None => {
                 let exception = try_catch.exception().unwrap();
                 let exception_string = exception
-                    .to_string(try_catch)
-                    .unwrap()
-                    .to_rust_string_lossy(try_catch);
-                let message = try_catch.message().unwrap();
-                Err(Error::ScriptExecutionError(ScriptExecutionErrorData {
-                    file_name: message.get_script_resource_name(try_catch).unwrap().to_rust_string_lossy(try_catch),
-                    line_number: u64::try_from(message.get_line_number(try_catch).unwrap()).unwrap(),
-                    start_column: u64::try_from(message.get_start_column()).unwrap(),
-                    end_column: u64::try_from(message.get_end_column()).unwrap(),
-                    trace: "".into(), // todo,
-                    message: exception_string,
-                    source_line: message.get_source_line(try_catch).unwrap().to_rust_string_lossy(try_catch),
-                }))
+                    .to_string(try_catch);
+
+                match exception_string {
+                    Some(exception_string) => {
+                        let exception_string = exception_string.to_rust_string_lossy(try_catch);
+                        let message = try_catch.message().unwrap();
+                        Err(Error::ScriptExecutionError(ScriptExecutionErrorData {
+                            file_name: message.get_script_resource_name(try_catch).unwrap().to_rust_string_lossy(try_catch),
+                            line_number: u64::try_from(message.get_line_number(try_catch).unwrap()).unwrap(),
+                            start_column: u64::try_from(message.get_start_column()).unwrap(),
+                            end_column: u64::try_from(message.get_end_column()).unwrap(),
+                            trace: "".into(), // todo,
+                            message: exception_string,
+                            source_line: message.get_source_line(try_catch).unwrap().to_rust_string_lossy(try_catch),
+                        }))
+                    }
+                    None => Ok(None)
+                }
             }
         };
         result
