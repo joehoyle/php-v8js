@@ -3,31 +3,93 @@ name: Build
 on: [push]
 
 jobs:
-  build:
-    runs-on: ${{matrix.os}}
+  linux:
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
     strategy:
       matrix:
         include:
-        - build: linux
-          os: ubuntu-latest
-          rust: stable
+        -
           target: x86_64-unknown-linux-gnu
-          file: libv8js.so
-        # - build: linux-aarch64
-        #   os: ubuntu-latest
-        #   rust: stable
-        #   target: aarch64-unknown-linux-gnu
-        #   cross: true
-        - build: macos-aarch64
-          os: macos-latest
-          rust: stable
+          platform: linux/amd64
+          php-version: '8.0'
+        -
+          os: ubuntu-latest
+          target: aarch64-unknown-linux-gnu
+          platform: linux/arm64
+          php-version: '8.0'
+        -
+          target: x86_64-unknown-linux-gnu
+          platform: linux/amd64
+          php-version: '8.1'
+        -
+          os: ubuntu-latest
+          target: aarch64-unknown-linux-gnu
+          platform: linux/arm64
+          php-version: '8.1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          driver-opts: network=host
+
+      - name: Setup docker
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: localhost:5000/phpv8js-build:latest
+          build-args: |
+            FROM_PHP=${{ matrix.php-version }}
+
+      - name: Build
+        run: docker run --rm -v $PWD:/code localhost:5000/phpv8js-build:latest bash -c 'rustup target add ${{ matrix.target }} ; cargo build --release --target ${{ matrix.target }}'
+
+      - name: Rename file
+        run: cp target/${{ matrix.target }}/release/libv8js.so php${{ matrix.php-version }}-${{ matrix.target }}-libv8js.so
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: php${{ matrix.php-version }}-${{ matrix.target }}
+          path: php${{ matrix.php-version }}-${{ matrix.target }}-libv8js.so
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            php${{ matrix.php-version }}-${{ matrix.target }}-libv8js.so
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+        -
           target: aarch64-apple-darwin
-          file: libv8js.dylib
-        - build: macos
-          os: macos-latest
-          rust: stable
+          php-version: '8.0'
+        -
           target: x86_64-apple-darwin
-          file: libv8js.dylib
+          php-version: '8.0'
+        -
+          target: aarch64-apple-darwin
+          php-version: '8.1'
+        -
+          target: x86_64-apple-darwin
+          php-version: '8.1'
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -39,6 +101,8 @@ jobs:
           target: ${{ matrix.target }}
           default: true
           override: true
+      - name: Setup PHP version
+        run: brew install php@${{ matrix.php-version }} && brew unlink php && brew link --force php@${{ matrix.php-version }}
       - name: Build
         uses: actions-rs/cargo@v1
         with:
@@ -47,13 +111,17 @@ jobs:
           args: --release --target ${{ matrix.target }} --lib
 
       - name: Rename file
-        run: mv target/${{ matrix.target }}/release/${{ matrix.file }} target/${{ matrix.target }}-${{ matrix.file }}
+        run: mv target/${{ matrix.target }}/release/libv8js.dylib target/php${{ matrix.php-version }}-${{ matrix.target }}-libv8js.dylib
 
+      - uses: actions/upload-artifact@v3
+        with:
+          name: php${{ matrix.php-version }}-${{ matrix.target }}
+          path: target/php${{ matrix.php-version }}-${{ matrix.target }}-libv8js.dylib
       - name: Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            target/${{ matrix.target }}-${{ matrix.file }}
+            target/php${{ matrix.php-version }}-${{ matrix.target }}-libv8js.dylib
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
