@@ -45,11 +45,18 @@ jobs:
         uses: docker/setup-qemu-action@v2
 
       - name: Cache Cargo
-        id: cache-primes
+        id: cache-cargo
         uses: actions/cache@v3
         with:
           path: ~/.cargo
           key: "v1"
+
+      - name: Cache Traget
+        id: cache-target
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: "${{ matrix.target }}"
 
       - name: Setup docker
         uses: docker/build-push-action@v2
