@@ -588,4 +588,9 @@ mod integration {
     fn v8js_version() {
         run_php("version.php");
     }
+
+    #[test]
+    fn react_wp_ssr() {
+        run_php("react-wp-ssr.php");
+    }
 }
