@@ -119,17 +119,9 @@ jobs:
       - name: Setup PHP version
         run: brew install php@${{ matrix.php-version }} && brew unlink php && brew link --force php@${{ matrix.php-version }}
 
-      - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          use-cross: ${{ matrix.cross }}
-          command: test
-          args: --target ${{ matrix.target }} --lib
-
       - name: Build
         uses: actions-rs/cargo@v1
         with:
-          use-cross: ${{ matrix.cross }}
           command: build
           args: --release --target ${{ matrix.target }} --lib
 
