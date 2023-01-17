@@ -221,6 +221,7 @@ impl V8Js {
                         Err(PhpException::new("".into(), 0, unsafe{ V8JS_MEMORY_LIMIT_EXCEPTION.unwrap() } ))
                     },
                     RuntimeError::ScriptExecutionError(error) => {
+                        dbg!(&error);
                         Err(PhpException::new(error.message.into(), 0, unsafe{ V8JS_SCRIPT_EXCEPTION.unwrap() } ))
                     }
                     _ => Err(PhpException::default(String::from("Unknown error.")))
