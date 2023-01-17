@@ -124,7 +124,7 @@ jobs:
         with:
           use-cross: ${{ matrix.cross }}
           command: test
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --lib
 
       - name: Build
         uses: actions-rs/cargo@v1
