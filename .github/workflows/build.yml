@@ -88,7 +88,7 @@ jobs:
       - run: mkdir ~/.cargo-registry
 
       - name: Build
-        run: docker run --rm -v ~/.cargo-registry:/usr/local/cargo/registry -v $PWD:/code localhost:5000/phpv8js-build:latest bash -c 'rustup target add ${{ matrix.target }} ; cargo test --target ${{ matrix.target }} && cargo build --release --target ${{ matrix.target }}'
+        run: docker run --rm -v ~/.cargo-registry:/usr/local/cargo/registry -v $PWD:/code localhost:5000/phpv8js-build:latest bash -c 'rustup target add ${{ matrix.target }} ; RUST_BACKTRACE=1 cargo test --target ${{ matrix.target }} && cargo build --release --target ${{ matrix.target }}'
 
       - name: Rename file
         run: cp target/${{ matrix.target }}/release/libv8js.so php${{ matrix.php-version }}-${{ matrix.target }}-libv8js.so
