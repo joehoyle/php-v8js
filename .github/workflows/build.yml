@@ -147,7 +147,7 @@ jobs:
           default: true
           override: true
       - name: Setup PHP version
-        run: brew tap shivammathur/php && brew unlink php && brew install shivammathur/php/php@${{ matrix.php-version }} && brew link --force shivammathur/php/php@${{ matrix.php-version }}
+        run: brew tap shivammathur/php && brew unlink php && ( brew install shivammathur/php/php@${{ matrix.php-version }} || true ) && brew link --force shivammathur/php/php@${{ matrix.php-version }}
 
       - name: Build
         uses: actions-rs/cargo@v1
