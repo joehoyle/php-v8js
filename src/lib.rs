@@ -104,20 +104,12 @@ pub fn js_value_from_zval<'a>(
         let zend_array = zval.array().unwrap();
         let mut values: Vec<v8::Local<'_, v8::Value>> = Vec::new();
         let mut keys: Vec<v8::Local<'_, v8::Name>> = Vec::new();
-        let mut has_string_keys = false;
-        for (index, key, elem) in zend_array.iter() {
-            let key = match key {
-                Some(key) => {
-                    has_string_keys = true;
-                    key
-                }
-                None => index.to_string(),
-            };
-            keys.push(v8::String::new(scope, key.as_str()).unwrap().into());
+        for (key, elem) in zend_array.iter() {
+            keys.push(v8::String::new(scope, key.to_string().as_str()).unwrap().into());
             values.push(js_value_from_zval(scope, elem));
         }
 
-        if has_string_keys {
+        if ! zend_array.has_numerical_keys() {
             let null: v8::Local<v8::Value> = v8::null(scope).into();
             return v8::Object::with_prototype_and_properties(scope, null, &keys[..], &values[..])
                 .into();

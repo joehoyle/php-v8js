@@ -17,26 +17,42 @@ jobs:
           target: x86_64-unknown-linux-gnu
           platform: linux/amd64
           php-version: '8.0'
+          distro: bullseye
         -
           target: aarch64-unknown-linux-gnu
           platform: linux/arm64
           php-version: '8.0'
+          distro: bullseye
         -
           target: x86_64-unknown-linux-gnu
           platform: linux/amd64
           php-version: '8.1'
+          distro: bookworm
         -
           target: aarch64-unknown-linux-gnu
           platform: linux/arm64
           php-version: '8.1'
+          distro: bookworm
         -
           target: x86_64-unknown-linux-gnu
           platform: linux/amd64
           php-version: '8.2'
+          distro: bookworm
         -
           target: aarch64-unknown-linux-gnu
           platform: linux/arm64
           php-version: '8.2'
+          distro: bookworm
+        -
+          target: aarch64-unknown-linux-gnu
+          platform: linux/arm64
+          php-version: '8.3'
+          distro: bookworm
+        -
+          target: aarch64-unknown-linux-gnu
+          platform: linux/amd64
+          php-version: '8.3'
+          distro: bookworm
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -67,6 +83,7 @@ jobs:
           tags: localhost:5000/phpv8js-build:latest
           build-args: |
             FROM_PHP=${{ matrix.php-version }}
+            FROM_DISTRO=${{ matrix.distro }}
 
       - run: mkdir ~/.cargo-registry
 
@@ -112,6 +129,12 @@ jobs:
         -
           target: x86_64-apple-darwin
           php-version: '8.2'
+        -
+          target: aarch64-apple-darwin
+          php-version: '8.3'
+        -
+          target: x86_64-apple-darwin
+          php-version: '8.3'
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -124,7 +147,7 @@ jobs:
           default: true
           override: true
       - name: Setup PHP version
-        run: brew install php@${{ matrix.php-version }} && brew unlink php && brew link --force php@${{ matrix.php-version }}
+        run: brew tap shivammathur/php && brew install shivammathur/php/php@${{ matrix.php-version }} && brew unlink php && brew link --force shivammathur/php/php@${{ matrix.php-version }}
 
       - name: Build
         uses: actions-rs/cargo@v1
