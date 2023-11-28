@@ -60,20 +60,6 @@ jobs:
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v2
 
-      - name: Cache Cargo
-        id: cache-cargo
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo
-          key: "v1"
-
-      - name: Cache Traget
-        id: cache-target
-        uses: actions/cache@v3
-        with:
-          path: target
-          key: "${{ matrix.target }}"
-
       - name: Setup docker
         uses: docker/build-push-action@v2
         with:
@@ -88,7 +74,7 @@ jobs:
       - run: mkdir ~/.cargo-registry
 
       - name: Build
-        run: docker run --rm -v ~/.cargo-registry:/usr/local/cargo/registry -v $PWD:/code localhost:5000/phpv8js-build:latest bash -c 'rustup target add ${{ matrix.target }} ; RUST_BACKTRACE=1 cargo test --target ${{ matrix.target }} && cargo build --release --target ${{ matrix.target }}'
+        run: docker run --rm -v $PWD:/code localhost:5000/phpv8js-build:latest bash -c 'rustup target add ${{ matrix.target }} ; RUST_BACKTRACE=1 cargo test --target ${{ matrix.target }} && cargo build --release --target ${{ matrix.target }}'
 
       - name: Rename file
         run: cp target/${{ matrix.target }}/release/libv8js.so php${{ matrix.php-version }}-${{ matrix.target }}-libv8js.so
