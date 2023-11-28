@@ -282,10 +282,9 @@ impl JSRuntime {
     pub fn create_snapshot(source: String) -> Option<Vec<u8>> {
         // Make sure platform is initted.
         JSRuntime::new(None);
-        let mut snapshot_creator = v8::SnapshotCreator::new(None);
-        let mut isolate = unsafe { snapshot_creator.get_owned_isolate() };
+        let mut snapshot_creator = v8::Isolate::snapshot_creator(None);
         {
-            let scope = &mut v8::HandleScope::new(&mut isolate);
+            let scope = &mut v8::HandleScope::new(&mut snapshot_creator);
             let c = v8::Context::new(scope);
             let cg = v8::Local::new(scope, c);
             let context = v8::Global::new(scope, cg);
@@ -302,10 +301,9 @@ impl JSRuntime {
             };
 
             script.run(scope);
-            snapshot_creator.set_default_context(context);
+            scope.set_default_context(context);
         }
         // The isolate must be dropped, else PHP will segfault.
-        std::mem::forget(isolate);
         let blob = snapshot_creator.create_blob(v8::FunctionCodeHandling::Clear);
         let startup_data = match blob {
             Some(data) => data,

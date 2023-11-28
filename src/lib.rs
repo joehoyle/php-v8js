@@ -2,7 +2,7 @@ use ext_php_rs::binary::Binary;
 use ext_php_rs::builders::ClassBuilder;
 use ext_php_rs::convert::{FromZval, IntoZval};
 use ext_php_rs::flags::DataType;
-use ext_php_rs::types::{ZendHashTable, ZendObject, Zval};
+use ext_php_rs::types::{ZendHashTable, ZendObject, Zval, ZendClassObject};
 use ext_php_rs::zend::{ClassEntry, ModuleEntry};
 use ext_php_rs::{exception::PhpException, zend::ce};
 use ext_php_rs::{info_table_end, info_table_row, info_table_start, prelude::*, php_print};
@@ -54,9 +54,9 @@ pub fn zval_from_jsvalue(result: v8::Local<v8::Value>, scope: &mut v8::HandleSco
     }
     if result.is_object() {
         let object = v8::Local::<v8::Object>::try_from(result).unwrap();
-        let properties = object.get_own_property_names(scope).unwrap();
-        let class_entry = ClassEntry::try_find("V8Object").unwrap();
-        let mut zend_object = ZendObject::new(class_entry);
+        let properties = object.get_own_property_names(scope, Default::default()).unwrap();
+        let mut obj = ZendClassObject::new(V8Object{});
+        let zend_object = obj.get_mut_zend_obj();
         for index in 0..properties.length() {
             let key = properties.get_index(scope, index).unwrap();
             let value = object.get(scope, key).unwrap();
@@ -307,7 +307,7 @@ pub fn php_callback(
     let isolate: &mut v8::Isolate = scope.as_mut();
     let state = JSRuntime::state(isolate);
     let state = state.borrow_mut();
-    let callback_name = args.data().unwrap().to_rust_string_lossy(scope);
+    let callback_name = args.data().to_rust_string_lossy(scope);
     let callback = state.callbacks.get(&callback_name);
     if callback.is_none() {
         println!("callback not found {:#?}", callback_name);
