@@ -4,7 +4,7 @@ on: [push]
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.builder }}
     services:
       registry:
         image: registry:2
@@ -18,47 +18,69 @@ jobs:
           platform: linux/amd64
           php-version: '8.0'
           distro: bullseye
+          builder: ubuntu-latest
         -
           target: aarch64-unknown-linux-gnu
           platform: linux/arm64
           php-version: '8.0'
           distro: bullseye
+          builder: buildjet-4vcpu-ubuntu-2204-arm
         -
           target: x86_64-unknown-linux-gnu
           platform: linux/amd64
           php-version: '8.1'
           distro: bookworm
+          builder: ubuntu-latest
         -
           target: aarch64-unknown-linux-gnu
           platform: linux/arm64
           php-version: '8.1'
           distro: bookworm
+          builder: buildjet-4vcpu-ubuntu-2204-arm
         -
           target: x86_64-unknown-linux-gnu
           platform: linux/amd64
           php-version: '8.2'
           distro: bookworm
+          builder: ubuntu-latest
         -
           target: aarch64-unknown-linux-gnu
           platform: linux/arm64
           php-version: '8.2'
           distro: bookworm
+          builder: buildjet-4vcpu-ubuntu-2204-arm
         -
           target: aarch64-unknown-linux-gnu
           platform: linux/arm64
           php-version: '8.3'
           distro: bookworm
+          builder: ubuntu-latest
         -
           target: x86_64-unknown-linux-gnu
           platform: linux/amd64
           php-version: '8.3'
           distro: bookworm
+          builder: buildjet-4vcpu-ubuntu-2204-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v1
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v2
+
+      - name: Cache Cargo
+        id: cache-cargo
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo
+          key: "v1"
+
+      - name: Cache Traget
+        id: cache-target
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: "${{ matrix.target }}"
 
       - name: Setup docker
         uses: docker/build-push-action@v2
