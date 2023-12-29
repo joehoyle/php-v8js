@@ -11,6 +11,7 @@ jobs:
         ports:
           - 5000:5000
     strategy:
+      fail-fast: false
       matrix:
         include:
         -
