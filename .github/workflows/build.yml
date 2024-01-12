@@ -4,39 +4,64 @@ on: [push]
 
 jobs:
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.builder }}
     services:
       registry:
         image: registry:2
         ports:
           - 5000:5000
     strategy:
+      fail-fast: false
       matrix:
         include:
         -
           target: x86_64-unknown-linux-gnu
           platform: linux/amd64
           php-version: '8.0'
+          distro: bullseye
+          builder: ubuntu-latest
         -
           target: aarch64-unknown-linux-gnu
           platform: linux/arm64
           php-version: '8.0'
+          distro: bullseye
+          builder: buildjet-4vcpu-ubuntu-2204-arm
         -
           target: x86_64-unknown-linux-gnu
           platform: linux/amd64
           php-version: '8.1'
+          distro: bookworm
+          builder: ubuntu-latest
         -
           target: aarch64-unknown-linux-gnu
           platform: linux/arm64
           php-version: '8.1'
+          distro: bookworm
+          builder: buildjet-4vcpu-ubuntu-2204-arm
         -
           target: x86_64-unknown-linux-gnu
           platform: linux/amd64
           php-version: '8.2'
+          distro: bookworm
+          builder: ubuntu-latest
         -
           target: aarch64-unknown-linux-gnu
           platform: linux/arm64
           php-version: '8.2'
+          distro: bookworm
+          builder: buildjet-4vcpu-ubuntu-2204-arm
+        -
+          target: aarch64-unknown-linux-gnu
+          platform: linux/arm64
+          php-version: '8.3'
+          distro: bookworm
+          builder: ubuntu-latest
+        -
+          target: x86_64-unknown-linux-gnu
+          platform: linux/amd64
+          php-version: '8.3'
+          distro: bookworm
+          builder: buildjet-4vcpu-ubuntu-2204-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -67,11 +92,12 @@ jobs:
           tags: localhost:5000/phpv8js-build:latest
           build-args: |
             FROM_PHP=${{ matrix.php-version }}
+            FROM_DISTRO=${{ matrix.distro }}
 
       - run: mkdir ~/.cargo-registry
 
       - name: Build
-        run: docker run --rm -v ~/.cargo-registry:/usr/local/cargo/registry -v $PWD:/code localhost:5000/phpv8js-build:latest bash -c 'rustup target add ${{ matrix.target }} ; cargo test --target ${{ matrix.target }} && cargo build --release --target ${{ matrix.target }}'
+        run: docker run --rm -v $PWD:/code localhost:5000/phpv8js-build:latest bash -c 'rustup target add ${{ matrix.target }} ; RUST_BACKTRACE=1 cargo test --target ${{ matrix.target }} && cargo build --release --target ${{ matrix.target }}'
 
       - name: Rename file
         run: cp target/${{ matrix.target }}/release/libv8js.so php${{ matrix.php-version }}-${{ matrix.target }}-libv8js.so
@@ -112,6 +138,12 @@ jobs:
         -
           target: x86_64-apple-darwin
           php-version: '8.2'
+        -
+          target: aarch64-apple-darwin
+          php-version: '8.3'
+        -
+          target: x86_64-apple-darwin
+          php-version: '8.3'
     steps:
       - name: Checkout
         uses: actions/checkout@v1
@@ -124,7 +156,7 @@ jobs:
           default: true
           override: true
       - name: Setup PHP version
-        run: brew install php@${{ matrix.php-version }} && brew unlink php && brew link --force php@${{ matrix.php-version }}
+        run: brew update && brew tap shivammathur/php && brew unlink php && ( brew reinstall shivammathur/php/php@${{ matrix.php-version }} || true ) && brew link --force --overwrite shivammathur/php/php@${{ matrix.php-version }} && php -i
 
       - name: Build
         uses: actions-rs/cargo@v1
