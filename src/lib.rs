@@ -2,17 +2,17 @@ use ext_php_rs::binary::Binary;
 use ext_php_rs::builders::ClassBuilder;
 use ext_php_rs::convert::{FromZval, IntoZval};
 use ext_php_rs::flags::DataType;
-use ext_php_rs::types::{ZendHashTable, ZendObject, Zval, ZendClassObject};
+use ext_php_rs::types::{ZendClassObject, ZendHashTable, Zval};
 use ext_php_rs::zend::{ClassEntry, ModuleEntry};
 use ext_php_rs::{exception::PhpException, zend::ce};
-use ext_php_rs::{info_table_end, info_table_row, info_table_start, prelude::*, php_print};
+use ext_php_rs::{info_table_end, info_table_row, info_table_start, php_print, prelude::*};
 
 use std::collections::HashMap;
 
 mod runtime;
 
-pub use crate::runtime::JSRuntime;
 pub use crate::runtime::Error as RuntimeError;
+pub use crate::runtime::JSRuntime;
 
 static mut V8JS_TIME_LIMIT_EXCEPTION: Option<&'static ClassEntry> = None;
 static mut V8JS_MEMORY_LIMIT_EXCEPTION: Option<&'static ClassEntry> = None;
@@ -54,8 +54,10 @@ pub fn zval_from_jsvalue(result: v8::Local<v8::Value>, scope: &mut v8::HandleSco
     }
     if result.is_object() {
         let object = v8::Local::<v8::Object>::try_from(result).unwrap();
-        let properties = object.get_own_property_names(scope, Default::default()).unwrap();
-        let mut obj = ZendClassObject::new(V8Object{});
+        let properties = object
+            .get_own_property_names(scope, Default::default())
+            .unwrap();
+        let mut obj = ZendClassObject::new(V8Object {});
         let zend_object = obj.get_mut_zend_obj();
         for index in 0..properties.length() {
             let key = properties.get_index(scope, index).unwrap();
@@ -105,11 +107,15 @@ pub fn js_value_from_zval<'a>(
         let mut values: Vec<v8::Local<'_, v8::Value>> = Vec::new();
         let mut keys: Vec<v8::Local<'_, v8::Name>> = Vec::new();
         for (key, elem) in zend_array.iter() {
-            keys.push(v8::String::new(scope, key.to_string().as_str()).unwrap().into());
+            keys.push(
+                v8::String::new(scope, key.to_string().as_str())
+                    .unwrap()
+                    .into(),
+            );
             values.push(js_value_from_zval(scope, elem));
         }
 
-        if ! zend_array.has_numerical_keys() {
+        if !zend_array.has_numerical_keys() {
             let null: v8::Local<v8::Value> = v8::null(scope).into();
             return v8::Object::with_prototype_and_properties(scope, null, &keys[..], &values[..])
                 .into();
@@ -152,9 +158,12 @@ impl V8Js {
         let mut runtime = JSRuntime::new(snapshot_blob);
         let object: v8::Global<v8::Value>;
         {
-            let scope = &mut runtime.handle_scope();
-            let o: v8::Local<v8::Value> = v8::Object::new(scope).into();
-            object = v8::Global::new(scope, o);
+            let context = runtime.global_context();
+            let mut isolate = runtime.isolate();
+            let isolate = &mut *isolate;
+            let mut scope = v8::HandleScope::with_context(isolate, context);
+            let o: v8::Local<v8::Value> = v8::Object::new(&mut scope).into();
+            object = v8::Global::new(&mut scope, o);
         }
         runtime.add_global(global_name.as_str(), object);
         runtime.add_global_function("var_dump", php_callback_var_dump);
@@ -170,7 +179,7 @@ impl V8Js {
     }
 
     pub fn set_module_loader(&mut self, callable: &Zval) {
-        let state = self.runtime.get_state();
+        let state = JSRuntime::state(self.runtime.isolate().as_mut());
         let mut state = state.borrow_mut();
         state.commonjs_module_loader = Some(callable.shallow_clone());
     }
@@ -194,8 +203,11 @@ impl V8Js {
         match result {
             Ok(result) => match result {
                 Some(result) => {
-                    let mut scope = &mut self.runtime.handle_scope();
-                    let local = v8::Local::new(scope, result);
+                    let context = self.runtime.global_context();
+                    let mut isolate = self.runtime.isolate();
+                    let isolate = &mut *isolate;
+                    let mut scope = v8::HandleScope::with_context(isolate, context);
+                    let local = v8::Local::new(&mut scope, result);
                     Ok(zval_from_jsvalue(local, &mut scope))
                 }
                 None => {
@@ -204,20 +216,20 @@ impl V8Js {
                     Ok(zval)
                 }
             },
-            Err(e) => {
-                match e {
-                    RuntimeError::ExecutionTimeout => {
-                        Err(PhpException::new("".into(), 0, unsafe{ V8JS_TIME_LIMIT_EXCEPTION.unwrap() } ))
-                    },
-                    RuntimeError::MemoryLimitExceeded => {
-                        Err(PhpException::new("".into(), 0, unsafe{ V8JS_MEMORY_LIMIT_EXCEPTION.unwrap() } ))
-                    },
-                    RuntimeError::ScriptExecutionError(error) => {
-                        Err(PhpException::new(error.message.into(), 0, unsafe{ V8JS_SCRIPT_EXCEPTION.unwrap() } ))
-                    }
-                    _ => Err(PhpException::default(String::from("Unknown error.")))
+            Err(e) => match e {
+                RuntimeError::ExecutionTimeout => Err(PhpException::new("".into(), 0, unsafe {
+                    V8JS_TIME_LIMIT_EXCEPTION.unwrap()
+                })),
+                RuntimeError::MemoryLimitExceeded => Err(PhpException::new("".into(), 0, unsafe {
+                    V8JS_MEMORY_LIMIT_EXCEPTION.unwrap()
+                })),
+                RuntimeError::ScriptExecutionError(error) => {
+                    Err(PhpException::new(error.message.into(), 0, unsafe {
+                        V8JS_SCRIPT_EXCEPTION.unwrap()
+                    }))
                 }
-            }
+                _ => Err(PhpException::default(String::from("Unknown error."))),
+            },
         }
     }
 
@@ -228,7 +240,12 @@ impl V8Js {
                 Some(global) => global,
                 None => return (),
             };
-            let mut scope = self.runtime.handle_scope();
+
+            let context = self.runtime.global_context();
+            let mut isolate = self.runtime.isolate();
+            let isolate = &mut *isolate;
+            let mut scope = v8::HandleScope::with_context(isolate, context);
+
             let global = v8::Local::new(&mut scope, global);
             let global: v8::Local<v8::Object> = v8::Local::<v8::Object>::try_from(global).unwrap();
             let property_name = v8::String::new(&mut scope, property).unwrap();
@@ -372,7 +389,7 @@ pub fn php_callback_print(
     args: v8::FunctionCallbackArguments,
     mut _rv: v8::ReturnValue,
 ) {
-    php_print!("{}", args.get(0).to_rust_string_lossy(scope) );
+    php_print!("{}", args.get(0).to_rust_string_lossy(scope));
 }
 
 pub fn php_callback_exit(
@@ -465,7 +482,6 @@ pub extern "C" fn php_module_info(_module: *mut ModuleEntry) {
     info_table_end!();
 }
 
-
 #[php_startup]
 pub fn startup() {
     let ce = ClassBuilder::new("V8JsTimeLimitException")
@@ -487,9 +503,22 @@ pub fn startup() {
     unsafe { V8JS_SCRIPT_EXCEPTION.replace(ce) };
 }
 
+extern "C" fn request_shutdown(module: i32, _: i32) -> i32 {
+    runtime::ISOLATES.with(|isolates| {
+        let mut isolates = isolates.borrow_mut();
+        // Loop through each item in the isolates vec in reverse order and remove them.
+        for index in (0..isolates.len()).rev() {
+            isolates.remove(index);
+        }
+    });
+    module
+}
+
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
-    module.info_function(php_module_info)
+    module
+        .info_function(php_module_info)
+        .request_shutdown_function(request_shutdown)
 }
 
 #[cfg(test)]

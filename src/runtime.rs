@@ -1,10 +1,16 @@
 use ext_php_rs::types::Zval;
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+thread_local! {
+    pub static ISOLATES: RefCell<Vec<Rc<RefCell<v8::OwnedIsolate>>>> = RefCell::new(Vec::new());
+}
+
 pub struct JSRuntime {
-    isolate: v8::OwnedIsolate,
+    // V8 Isolates have to be dropped in the reverse-order they were created. This presents a challenge as the PHP library can
+    // init new isolates and drop them in any order.
+    isolate: Rc<RefCell<v8::OwnedIsolate>>,
 }
 
 pub struct JsRuntimeState {
@@ -35,7 +41,7 @@ pub enum Error {
 }
 
 fn init_v8() {
-    let platform = v8::new_default_platform(0, false).make_shared();
+    let platform = v8::new_unprotected_default_platform(0, false).make_shared();
     v8::V8::initialize_platform(platform);
     v8::V8::initialize();
 }
@@ -69,6 +75,12 @@ impl JSRuntime {
             commonjs_modules: HashMap::new(),
         })));
 
+        let isolate = Rc::new(RefCell::new(isolate));
+        // let isolate = ManuallyDrop::new(isolate);
+        ISOLATES.with(|isolates| {
+            let mut isolates = isolates.borrow_mut();
+            isolates.push(isolate.clone());
+        });
         JSRuntime { isolate }
     }
 
@@ -77,23 +89,23 @@ impl JSRuntime {
         s.clone()
     }
 
-    pub fn get_state(&self) -> &Rc<RefCell<JsRuntimeState>> {
-        self.isolate.get_slot::<Rc<RefCell<JsRuntimeState>>>().unwrap()
+    pub fn isolate(&self) -> RefMut<'_, v8::OwnedIsolate> {
+        self.isolate.borrow_mut()
     }
 
     pub fn global_context(&self) -> v8::Global<v8::Context> {
-        let state = Self::state(&self.isolate);
+        let state = Self::state(&self.isolate());
         let state = state.borrow();
         state.global_context.clone()
     }
 
-    pub fn handle_scope(&mut self) -> v8::HandleScope {
-        let context = self.global_context();
-        v8::HandleScope::with_context(&mut self.isolate, context)
-    }
-
     pub fn add_global(&mut self, name: &str, value: v8::Global<v8::Value>) {
-        let mut scope = self.handle_scope();
+        let context = self.global_context();
+        let mut isolate = self.isolate();
+        let isolate = &mut *isolate;
+        let mut scope = v8::HandleScope::with_context(isolate, context);
+
+        // let mut scope = self.handle_scope();
         let context = scope.get_current_context();
         let global = context.global(&mut scope);
 
@@ -104,7 +116,10 @@ impl JSRuntime {
     }
 
     pub fn get_global(&mut self, name: &str) -> Option<v8::Global<v8::Value>> {
-        let mut scope = self.handle_scope();
+        let context = self.global_context();
+        let mut isolate = self.isolate();
+        let isolate = &mut *isolate;
+        let mut scope = v8::HandleScope::with_context(isolate, context);
         let context = scope.get_current_context();
         let global = context.global(&mut scope);
 
@@ -115,7 +130,7 @@ impl JSRuntime {
     }
 
     pub fn add_callback(&mut self, name: &str, callback: Zval) {
-        let state = Self::state(&self.isolate);
+        let state = Self::state(&self.isolate());
         let mut state = state.borrow_mut();
         state.callbacks.insert(name.into(), callback);
     }
@@ -132,7 +147,10 @@ impl JSRuntime {
         // let global_scope = context.global(scope);
         let function: v8::Global<v8::Value>;
         {
-            let mut scope = self.handle_scope();
+            let context = self.global_context();
+            let mut isolate = self.isolate();
+            let isolate = &mut *isolate;
+            let mut scope = v8::HandleScope::with_context(isolate, context);
             let function_builder: v8::FunctionBuilder<v8::Function> =
                 v8::FunctionBuilder::new(callback);
             let f: v8::Local<v8::Value> = function_builder.build(&mut scope).unwrap().into();
@@ -149,18 +167,21 @@ impl JSRuntime {
         time_limit: Option<u64>,
         memory_limit: Option<u64>,
     ) -> Result<Option<v8::Global<v8::Value>>, Error> {
-        let isolate_handle = self.isolate.thread_safe_handle();
-        let scope = &mut self.handle_scope();
-        let code = v8::String::new(scope, code).ok_or(Error::V8Error)?;
+        let isolate_handle = self.isolate().thread_safe_handle();
+        let context = self.global_context();
+        let mut isolate = self.isolate();
+        let isolate = &mut *isolate;
+        let mut scope = v8::HandleScope::with_context(isolate, context);
+        let code = v8::String::new(&mut scope, code).ok_or(Error::V8Error)?;
 
         let resource_name = v8::String::new(
-            scope,
+            &mut scope,
             identifier.unwrap_or("V8Js::executeString".into()).as_str(),
         )
         .unwrap();
-        let source_map_url = v8::String::new(scope, "source_map_url").unwrap();
+        let source_map_url = v8::String::new(&mut scope, "source_map_url").unwrap();
         let script_origin = v8::ScriptOrigin::new(
-            scope,
+            &mut scope,
             resource_name.into(),
             0,
             0,
@@ -172,10 +193,10 @@ impl JSRuntime {
             false,
         );
 
-        let try_catch = &mut v8::TryCatch::new(scope);
+        let try_catch = &mut v8::TryCatch::new(&mut scope);
 
-        let script =
-            v8::Script::compile(try_catch, code, Some(&script_origin)).ok_or(Error::JSRuntimeError)?;
+        let script = v8::Script::compile(try_catch, code, Some(&script_origin))
+            .ok_or(Error::JSRuntimeError)?;
         let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let time_limit_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let memory_limit_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -255,24 +276,30 @@ impl JSRuntime {
             Some(result) => Ok(Some(v8::Global::new(try_catch, result))),
             None => {
                 let exception = try_catch.exception().unwrap();
-                let exception_string = exception
-                    .to_string(try_catch);
+                let exception_string = exception.to_string(try_catch);
 
                 match exception_string {
                     Some(exception_string) => {
                         let exception_string = exception_string.to_rust_string_lossy(try_catch);
                         let message = try_catch.message().unwrap();
                         Err(Error::ScriptExecutionError(ScriptExecutionErrorData {
-                            file_name: message.get_script_resource_name(try_catch).unwrap().to_rust_string_lossy(try_catch),
-                            line_number: u64::try_from(message.get_line_number(try_catch).unwrap()).unwrap(),
+                            file_name: message
+                                .get_script_resource_name(try_catch)
+                                .unwrap()
+                                .to_rust_string_lossy(try_catch),
+                            line_number: u64::try_from(message.get_line_number(try_catch).unwrap())
+                                .unwrap(),
                             start_column: u64::try_from(message.get_start_column()).unwrap(),
                             end_column: u64::try_from(message.get_end_column()).unwrap(),
                             trace: "".into(), // todo,
                             message: exception_string,
-                            source_line: message.get_source_line(try_catch).unwrap().to_rust_string_lossy(try_catch),
+                            source_line: message
+                                .get_source_line(try_catch)
+                                .unwrap()
+                                .to_rust_string_lossy(try_catch),
                         }))
                     }
-                    None => Ok(None)
+                    None => Ok(None),
                 }
             }
         };
